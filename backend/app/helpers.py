@@ -1,5 +1,7 @@
 """Общие проверки доступа и сериализация заданий."""
+import re
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -9,7 +11,20 @@ from .deps import Context
 
 
 def utcnow() -> datetime:
-    return datetime.utcnow()
+    """Наивный UTC: SQLite хранит datetime без tz, сравнения идут по UTC."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def content_disposition(filename: str) -> str:
+    """Заголовок Content-Disposition для скачивания (RFC 5987).
+
+    HTTP-заголовки кодируются в latin-1: кириллица и прочий не-ASCII падают с
+    UnicodeEncodeError. Отдаем ASCII-fallback плюс filename*=UTF-8''...,
+    который браузеры (и наш веб-клиент) предпочитают при наличии.
+    """
+    fallback = re.sub(r"[^\x20-\x7e]", "_", filename).replace('"', "")
+    quoted = quote(filename)
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quoted}"
 
 
 def naive_utc(dt: datetime) -> datetime:

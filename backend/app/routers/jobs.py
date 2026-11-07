@@ -9,6 +9,7 @@ from ..deps import Context, get_context
 from ..formats import segmentation
 from ..helpers import (
     can_manage,
+    content_disposition,
     ensure_job_access,
     job_deadline,
     job_or_404,
@@ -326,7 +327,7 @@ def export_job(job_id: int, ctx: Context = Depends(get_context)):
     return Response(
         content=exported,
         media_type=media_types[fmt],
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": content_disposition(filename)},
     )
 
 

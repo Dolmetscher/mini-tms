@@ -34,3 +34,16 @@ def similarity_ratio(s1: str, s2: str) -> int:
     if longest == 0:
         return 100
     return int(round((longest - levenshtein_distance(n1, n2)) / longest * 100))
+
+
+def length_bound_ratio(s1: str, s2: str) -> int:
+    """Верхняя граница схожести по разнице длин (0-100), без вычисления Левенштейна.
+
+    dist >= |len(n1) - len(n2)|, поэтому схожесть не может превысить это значение.
+    Используется как дешевый pre-filter в поиске по TM.
+    """
+    n1, n2 = normalize(s1), normalize(s2)
+    longest = max(len(n1), len(n2))
+    if longest == 0:
+        return 100
+    return int(round((longest - abs(len(n1) - len(n2))) / longest * 100))

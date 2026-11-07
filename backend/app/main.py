@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 
+import logging
+
 import jwt
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,9 +22,16 @@ from .seed import seed_if_empty
 from .services import notify
 from .ws import manager
 
+logger = logging.getLogger("mini-tms")
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if config.SECRET_KEY.startswith("dev-secret"):
+        logger.warning(
+            "TMS_SECRET_KEY is not set: using the built-in development key. "
+            "Set TMS_SECRET_KEY before exposing the server to other users."
+        )
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         seed_if_empty(db)
