@@ -655,3 +655,29 @@ textarea {
   gap: 4px;
   align-items: flex-end;
 }
+
+/* --- уведомление о результате операции (pre-translate, replace) --- */
+.notice {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: var(--green);
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+/* --- таблица анализа объема --- */
+.analysis-table {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.analysis-table tr.totals td {
+  font-weight: 700;
+  border-top: 2px solid var(--border);
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+}

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import { api, ApiError } from '../api/client';
+import { api, ApiError, downloadBilingualExport } from '../api/client';
 import type {
-  JobDetail, MTSuggestion, QAReport, Segment, TBHit, TMSuggestion, WsEvent,
+  AnalysisReport, JobDetail, MTSuggestion, QAReport, Segment, TBHit, TMSuggestion, WsEvent,
 } from '../api/types';
 import { useAuth } from '../state/AuthContext';
 import { useUpdates } from '../ws/useUpdates';
@@ -45,6 +45,14 @@ export default function EditorPage() {
   const [conflict, setConflict] = useState<{ server: Segment } | null>(null);
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
+  const [analysis, setAnalysis] = useState<AnalysisReport | null>(null);
+  const [preTrOpen, setPreTrOpen] = useState(false);
+  const [preTrBusy, setPreTrBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [findText, setFindText] = useState('');
+  const [replaceText, setReplaceText] = useState('');
+  const [replaceBusy, setReplaceBusy] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -170,6 +178,8 @@ export default function EditorPage() {
               translation_status: (event.translation_status as Segment['translation_status']) ?? s.translation_status,
               confirmed: (event.confirmed as boolean) ?? s.confirmed,
               target_text: (event.target_text as string) ?? s.target_text,
+              // серверная версия после автопропагации: иначе стейл base_updated_at даст ложный 409
+              updated_at: (event.updated_at as string) ?? s.updated_at,
             };
           }),
         };
@@ -296,6 +306,60 @@ export default function EditorPage() {
     }
   };
 
+  const openAnalysis = async () => {
+    try {
+      setAnalysis(await api.jobAnalysis(jobId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Analysis failed');
+    }
+  };
+
+  const runPreTranslate = async (minScore: number) => {
+    setPreTrBusy(true);
+    try {
+      const r = await api.preTranslateJob(jobId, minScore);
+      setPreTrOpen(false);
+      setNotice(
+        `Pre-translate: ${r.filled_exact} exact + ${r.filled_fuzzy} fuzzy from TM, ` +
+        `${r.propagated} propagated repetitions${r.skipped ? `, ${r.skipped} left untranslated` : ''}. ` +
+        'Drafts are not confirmed — review each one.',
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Pre-translate failed');
+    } finally {
+      setPreTrBusy(false);
+    }
+  };
+
+  const replaceCount = useMemo(() => {
+    if (!job || !findText) return 0;
+    return job.segments.filter((s) => s.target_text.includes(findText)).length;
+  }, [job, findText]);
+
+  const applyReplace = async () => {
+    if (!job || !findText || replaceBusy) return;
+    setReplaceBusy(true);
+    try {
+      let done = 0;
+      for (const s of job.segments) {
+        if (!s.target_text.includes(findText)) continue;
+        await api.saveSegment(s.id, {
+          target_text: s.target_text.split(findText).join(replaceText),
+          base_updated_at: s.updated_at,
+        });
+        done += 1;
+      }
+      setReplaceOpen(false);
+      setNotice(`Replaced in ${done} segment(s). Changed segments lose confirmation.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Replace failed');
+    } finally {
+      setReplaceBusy(false);
+    }
+  };
+
   const doSubmit = async () => {
     try {
       await api.submitJob(job.id);
@@ -325,6 +389,13 @@ export default function EditorPage() {
         </span>
         {job.is_overdue && <span className="status-chip st-new overdue">overdue</span>}
         <span className="spacer" />
+        <button
+          className="btn small"
+          title="Two-column DOCX (source | translation) for review"
+          onClick={() => downloadBilingualExport(jobId).catch((e: Error) => setError(e.message))}
+        >
+          Bilingual DOCX
+        </button>
         <span className={`save-state save-${saveState}`}>{saveLabel[saveState]}</span>
       </section>
 
@@ -332,6 +403,7 @@ export default function EditorPage() {
         <div className="alert">Returned to rework: {job.rework_comment}</div>
       )}
       {error && <div className="alert">{error}</div>}
+      {notice && <div className="notice">{notice}</div>}
 
       <section className="card row wrap">
         <input
@@ -346,6 +418,13 @@ export default function EditorPage() {
         <button className={`btn small ${filter === 'qa' ? 'primary' : ''}`} onClick={() => { setFilter(filter === 'qa' ? 'all' : 'qa'); void openQa(); }}>
           QA issues
         </button>
+        <button className="btn small" onClick={() => void openAnalysis()}>Analysis</button>
+        {canEdit && (
+          <button className="btn small" onClick={() => { setNotice(''); setPreTrOpen(true); }}>Pre-translate…</button>
+        )}
+        {canEdit && (
+          <button className="btn small" onClick={() => { setNotice(''); setReplaceOpen(true); }} title="Ctrl+H">Replace…</button>
+        )}
         <span className="spacer" />
         {canEdit && active && (
           <>
@@ -455,6 +534,8 @@ export default function EditorPage() {
                       // Alt+↓/↑ — переход к следующему/предыдущему сегменту (стандарт CAT)
                       if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); goto(1); }
                       if (e.altKey && e.key === 'ArrowUp') { e.preventDefault(); goto(-1); }
+                      // Ctrl+H — найти и заменить по всем сегментам задания
+                      if (e.ctrlKey && (e.key === 'h' || e.key === 'H')) { e.preventDefault(); setReplaceOpen(true); }
                     }}
                     placeholder="Type translation here…"
                     rows={4}
@@ -597,6 +678,106 @@ export default function EditorPage() {
                 void persist({ ...server }, draft);
               }}>
                 Overwrite with mine
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {analysis && (
+        <div className="modal-backdrop" onClick={() => setAnalysis(null)}>
+          <div className="modal card" onClick={(e) => e.stopPropagation()}>
+            <h3 className="panel-title">Volume analysis — {analysis.source_lang} → {analysis.target_lang}</h3>
+            <p className="muted small-text">
+              Mandatory segments vs project TMs{analysis.tm_names.length ? ` (${analysis.tm_names.join(', ')})` : ''}.
+              Weighted words = payable volume estimate.
+            </p>
+            <table className="jobs-table analysis-table">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Segments</th>
+                  <th>Words</th>
+                  <th>Weighted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {analysis.categories.map((c) => (
+                  <tr key={c.code}>
+                    <td>{c.label}</td>
+                    <td>{c.segments}</td>
+                    <td>{c.words}</td>
+                    <td>{c.weighted}</td>
+                  </tr>
+                ))}
+                <tr className="totals">
+                  <td>Total</td>
+                  <td>{analysis.segments}</td>
+                  <td>{analysis.words}</td>
+                  <td>{analysis.weighted_words}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div className="row" style={{ marginTop: 10 }}>
+              <button className="btn" onClick={() => setAnalysis(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {preTrOpen && (
+        <div className="modal-backdrop" onClick={() => setPreTrOpen(false)}>
+          <div className="modal card" onClick={(e) => e.stopPropagation()}>
+            <h3 className="panel-title">Pre-translate from TM</h3>
+            <p className="muted">
+              Fills empty segments with best TM matches and propagated repetitions.
+              Results are unconfirmed drafts — review each one before confirming.
+            </p>
+            <div className="row" style={{ marginTop: 10 }}>
+              <button className="btn primary" disabled={preTrBusy} onClick={() => void runPreTranslate(100)}>
+                Exact only (100%)
+              </button>
+              <span className="spacer" />
+              <button className="btn" disabled={preTrBusy} onClick={() => void runPreTranslate(60)}>
+                Exact + fuzzy (≥60%)
+              </button>
+            </div>
+            <p className="muted small-text" style={{ marginTop: 10 }}>
+              Conservative choice: exact only. Fuzzy drafts need more post-editing.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {replaceOpen && (
+        <div className="modal-backdrop" onClick={() => setReplaceOpen(false)}>
+          <div className="modal card" onClick={(e) => e.stopPropagation()}>
+            <h3 className="panel-title">Find &amp; replace in translations</h3>
+            <p className="muted">Applies to target texts of all segments of this job.</p>
+            <div className="column" style={{ gap: 8, marginTop: 8 }}>
+              <input
+                placeholder="Find in translations…"
+                value={findText}
+                onChange={(e) => setFindText(e.target.value)}
+                autoFocus
+              />
+              <input
+                placeholder="Replace with…"
+                value={replaceText}
+                onChange={(e) => setReplaceText(e.target.value)}
+              />
+            </div>
+            <p className="muted small-text">
+              {findText
+                ? `${replaceCount} segment(s) contain “${findText}”. Changed segments lose confirmation.`
+                : 'Type text to search for.'}
+            </p>
+            <div className="row" style={{ marginTop: 10 }}>
+              <button className="btn" onClick={() => setReplaceOpen(false)}>Cancel</button>
+              <span className="spacer" />
+              <button className="btn primary" disabled={!findText || replaceCount === 0 || replaceBusy}
+                      onClick={() => void applyReplace()}>
+                {replaceBusy ? 'Replacing…' : 'Replace all'}
               </button>
             </div>
           </div>

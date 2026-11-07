@@ -1,7 +1,7 @@
 import type {
-  AppNotification, DocumentInfo, Job, JobDetail, LoginResponse, Member,
-  MTSuggestion, Project, QAReport, Resource, Segment, TBEntry, TBHit, TBInfo,
-  TMEntry, TMInfo, TMSuggestion, User,
+  AnalysisReport, AppNotification, DocumentInfo, Job, JobDetail, LoginResponse, Member,
+  MTSuggestion, PreTranslateResult, Project, QAReport, Resource, Segment, TBEntry, TBHit,
+  TBInfo, TMEntry, TMInfo, TMSuggestion, User,
 } from './types';
 
 let API_BASE =
@@ -97,6 +97,10 @@ export async function downloadTmExport(tmId: number): Promise<void> {
 
 export async function downloadTbExport(tbId: number): Promise<void> {
   return downloadFile(`/api/tb/tbs/${tbId}/export`, `tb-${tbId}.csv`);
+}
+
+export async function downloadBilingualExport(jobId: number): Promise<void> {
+  return downloadFile(`/api/jobs/${jobId}/export-bilingual`, `job-${jobId}-bilingual.docx`);
 }
 
 export class ApiError extends Error {
@@ -197,6 +201,11 @@ export const api = {
     request<Job>(`/api/jobs/${id}/return`, { method: 'POST', body: JSON.stringify({ comment }) }),
   cancelJob: (id: number) => request<Job>(`/api/jobs/${id}/cancel`, { method: 'POST' }),
   jobQa: (id: number) => request<QAReport>(`/api/jobs/${id}/qa`),
+  jobAnalysis: (id: number) => request<AnalysisReport>(`/api/jobs/${id}/analysis`),
+  preTranslateJob: (id: number, minScore: number) =>
+    request<PreTranslateResult>(`/api/jobs/${id}/pre-translate`, {
+      method: 'POST', body: JSON.stringify({ min_score: minScore }),
+    }),
   saveSegment: (id: number, body: { target_text?: string; confirmed?: boolean; base_updated_at?: string }) =>
     request<Segment>(`/api/segments/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   mtSuggest: (jobId: number, segmentId: number) =>

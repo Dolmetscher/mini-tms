@@ -142,6 +142,32 @@ export interface MTSuggestion {
   provider: string;
 }
 
+export interface AnalysisCategory {
+  code: string;
+  label: string;
+  segments: number;
+  words: number;
+  weighted: number;
+}
+
+export interface AnalysisReport {
+  job_id: number;
+  source_lang: string;
+  target_lang: string;
+  tm_names: string[];
+  segments: number;
+  words: number;
+  weighted_words: number;
+  categories: AnalysisCategory[];
+}
+
+export interface PreTranslateResult {
+  filled_exact: number;
+  filled_fuzzy: number;
+  propagated: number;
+  skipped: number;
+}
+
 export interface AppNotification {
   id: number;
   type: string;
