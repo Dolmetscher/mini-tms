@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Mini TMS",
+    "slug": "mini-tms",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "android": {
+      "package": "com.dolme.minitms",
+      "versionCode": 1,
+      "usesCleartextTraffic": true
+    },
+    "plugins": [
+      "expo-asset",
+      "expo-font",
+      "expo-secure-store"
+    ]
+  }
+}

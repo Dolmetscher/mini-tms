@@ -1,0 +1,7 @@
+node_modules/
+.expo/
+dist/
+.m2repo/
+android/.gradle/
+android/build/
+android/app/build/

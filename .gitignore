@@ -1,0 +1,27 @@
+# Python / backend
+backend/.venv/
+backend/**/__pycache__/
+backend/.pytest_cache/
+backend/tms.db
+backend/tms.db-journal
+backend/data/
+
+# Node
+**/node_modules/
+web/dist/
+mobile/dist/
+
+# Mobile (генерируется `npx expo prebuild`; локальные пути в local.properties)
+mobile/.expo/
+mobile/.m2repo/
+mobile/android/
+mobile/ios/
+
+# Desktop
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
+# OS
+Thumbs.db
+.DS_Store
+*apk
