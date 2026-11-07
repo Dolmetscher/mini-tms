@@ -4,12 +4,14 @@
 обязательные сегменты, ошибки тегов. Предупреждения: расхождения чисел,
 нарушение терминологии (в т.ч. запрещенные варианты из TB), и дополнительные
 проверки по переводческим практикам CAT-инструментов: пробелы, повторяющиеся
-слова, баланс скобок, конечная пунктуация, совпадение с исходником.
+слова, баланс скобок, конечная пунктуация, совпадение с исходником,
+плейсхолдеры форматов (%s, {0}, Qt %1) и аномальное соотношение длины.
 
 Все дополнительные проверки — только предупреждения: они не блокируют сдачу
 (в соответствии с ТЗ блокируют только три вида ошибок выше).
 """
 import re
+from collections import Counter
 
 from sqlalchemy.orm import Session
 
@@ -22,6 +24,12 @@ _REPEATED_WORD_RE = re.compile(r"(\S+)(\s+\1)(?=\s|$)", re.IGNORECASE)
 _HAS_LETTER_RE = re.compile(r"\w", re.UNICODE)
 # URL/email/пути часто законно совпадают с исходником — не шумим.
 _URLISH_RE = re.compile(r"^(https?://|www\.)\S*$|^\S+@\S+$", re.IGNORECASE)
+# Плейсхолдеры программных форматов: printf %s/%d/%f и %1$s, Qt %1, .NET {0}/{name}.
+# Встречаются в UI-строках и документации ПО; потеря или искажение — критичная
+# ошибка локализации, поэтому предупреждаем даже без ТЗ-требования.
+_PLACEHOLDER_RE = re.compile(r"%(?:\d+\$)?[sdf]|%\d+|\{[^{}\s]+\}")
+# Языки с письмом без пробелов: длина в символах несравнима с алфавитными парами.
+_CJK_LANG_PREFIXES = ("zh", "ja", "ko")
 
 # Парные скобки и кавычки: открывающая -> закрывающая.
 _BRACKETS = {"(": ")", "[": "]", "{": "}", "«": "»", "„": "“"}
@@ -115,6 +123,54 @@ def _check_identical(segment: models.Segment, source_lang: str, target_lang: str
         return None  # URL/email обычно не переводятся
     if source.casefold() == target.casefold():
         return "Translation is identical to the source"
+    return None
+
+
+def _check_placeholders(segment: models.Segment) -> str | None:
+    """Мультимножество плейсхолдеров перевода должно совпадать с исходником.
+
+    Пример: «Error %s in file {0}» при переводе «Ошибка %d в файле {0}» —
+    %s потерян, %d появился. Сравнение по множеству с кратностями (Counter),
+    а не просто по вхождению каждого токена.
+    """
+    source = tags.strip_tags(segment.source_text)
+    target = tags.strip_tags(segment.target_text)
+    if not target.strip():
+        return None
+    src = Counter(_PLACEHOLDER_RE.findall(source))
+    tgt = Counter(_PLACEHOLDER_RE.findall(target))
+    if src == tgt:
+        return None
+    missing = sorted((src - tgt).elements())
+    extra = sorted((tgt - src).elements())
+    parts = []
+    if missing:
+        parts.append(f"missing {' '.join(missing)}")
+    if extra:
+        parts.append(f"unexpected {' '.join(extra)}")
+    return f"Placeholder mismatch: {', '.join(parts)}"
+
+
+def _check_length_ratio(
+    segment: models.Segment, source_lang: str, target_lang: str
+) -> str | None:
+    """Аномальное соотношение длин (симптом неполного перевода или воды).
+
+    Только для алфавитных пар (для CJK длина в символах несравнима) и
+    исходников от 40 символов — на коротких сегментах проверка шумит.
+    """
+    if source_lang[:2].lower() in _CJK_LANG_PREFIXES or target_lang[:2].lower() in _CJK_LANG_PREFIXES:
+        return None
+    source = tags.strip_tags(segment.source_text).strip()
+    target = tags.strip_tags(segment.target_text).strip()
+    if not target or len(source) < 40:
+        return None
+    ratio = len(target) / len(source)
+    if ratio > 2.0 or ratio < 0.5:
+        return (
+            f"Translation length is {int(round(ratio * 100))}% of the source "
+            "(typical 80–120%) — check for missing or extra content"
+        )
     return None
 
 
@@ -249,6 +305,12 @@ def run_qa(db: Session, job: models.Job) -> dict:
         identical_issue = _check_identical(segment, job.project.source_lang, job.target_lang)
         if identical_issue:
             add("identical_translation", identical_issue)
+        placeholder_issue = _check_placeholders(segment)
+        if placeholder_issue:
+            add("placeholder", placeholder_issue)
+        length_issue = _check_length_ratio(segment, job.project.source_lang, job.target_lang)
+        if length_issue:
+            add("length_ratio", length_issue)
 
     blocking = [i for i in items if i["severity"] == "error"]
     return {
