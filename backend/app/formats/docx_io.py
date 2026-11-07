@@ -41,3 +41,31 @@ def export_file(original: bytes, targets: list[str]) -> bytes:
     buffer = io.BytesIO()
     doc.save(buffer)
     return buffer.getvalue()
+
+
+def render_bilingual(
+    title: str,
+    source_lang: str,
+    target_lang: str,
+    rows: list[tuple[int, str, str]],
+) -> bytes:
+    """Двуязычный DOCX для ревью/заказчика: таблица № / исходник / перевод.
+
+    Пустой перевод показывается тире — ревьюер видит незавершенные места.
+    """
+    doc = open_docx()
+    doc.add_heading(title, level=1)
+    table = doc.add_table(rows=1, cols=3)
+    table.style = "Table Grid"
+    header = table.rows[0].cells
+    header[0].text = "#"
+    header[1].text = f"Source ({source_lang})"
+    header[2].text = f"Translation ({target_lang})"
+    for position, source, target in rows:
+        cells = table.add_row().cells
+        cells[0].text = str(position)
+        cells[1].text = source
+        cells[2].text = target if target.strip() else "—"
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()

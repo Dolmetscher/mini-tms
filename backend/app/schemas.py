@@ -233,6 +233,41 @@ class MTSuggestion(BaseModel):
     provider: str
 
 
+# --- леверидж TM: анализ и пред-перевод ---
+
+
+class AnalysisCategory(BaseModel):
+    code: str
+    label: str
+    segments: int
+    words: int
+    weighted: int
+
+
+class AnalysisReport(BaseModel):
+    job_id: int
+    source_lang: str
+    target_lang: str
+    tm_names: list[str]
+    segments: int
+    words: int
+    weighted_words: int
+    categories: list[AnalysisCategory]
+
+
+class PreTranslateRequest(BaseModel):
+    """min_score=100 — только точные совпадения (по умолчанию);
+    ниже — включать fuzzy вплоть до TMS_FUZZY_MIN_SCORE."""
+    min_score: int = Field(default=100, ge=60, le=100)
+
+
+class PreTranslateResult(BaseModel):
+    filled_exact: int
+    filled_fuzzy: int
+    propagated: int
+    skipped: int
+
+
 # --- TM / TB ---
 
 

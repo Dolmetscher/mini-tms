@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..deps import Context, get_context
-from ..formats import segmentation
+from ..formats import docx_io, segmentation
 from ..helpers import (
     can_manage,
     content_disposition,
@@ -17,7 +17,7 @@ from ..helpers import (
     org_member_ids,
     serialize_job,
 )
-from ..services import audit, notify, qa
+from ..services import audit, leveraging, notify, qa
 from ..services.mt import MTError, get_provider
 from ..ws import make_event, manager
 
@@ -141,8 +141,12 @@ async def save_segment(segment_id: int, body: schemas.SegmentUpdate, ctx: Contex
 
     if job.status == "accepted":
         job.status = "in_progress"  # принято -> в работе при первой правке
+    propagated: list[models.Segment] = []
     if segment.confirmed and segment.translation_status == "translated":
         _write_translations_to_tm(ctx.db, job, segment)
+        # Автопропагация: идентичные пустые сегменты получают подтвержденный
+        # перевод (черновиком — вычитка контекста остается за переводчиком).
+        propagated = leveraging.propagate_translation(ctx.db, job, segment)
 
     ctx.db.commit()
     ctx.db.refresh(segment)
@@ -159,8 +163,25 @@ async def save_segment(segment_id: int, body: schemas.SegmentUpdate, ctx: Contex
             target_text=segment.target_text,
             job_status=job.status,
             user=ctx.user.username,
+            updated_at=segment.updated_at.isoformat(),
         ),
     )
+    for seg in propagated:
+        await manager.send_users(
+            org_member_ids(ctx.db, ctx.org_id),
+            make_event(
+                "segment_updated",
+                job_id=job.id,
+                segment_id=seg.id,
+                position=seg.position,
+                translation_status=seg.translation_status,
+                confirmed=seg.confirmed,
+                target_text=seg.target_text,
+                job_status=job.status,
+                user=ctx.user.username,
+                updated_at=seg.updated_at.isoformat(),
+            ),
+        )
     return segment
 
 
@@ -232,6 +253,46 @@ def get_qa(job_id: int, ctx: Context = Depends(get_context)):
     job = job_or_404(ctx, job_id)
     ensure_job_access(ctx, job)
     return qa.run_qa(ctx.db, job)
+
+
+@router.get("/jobs/{job_id}/analysis", response_model=schemas.AnalysisReport)
+def get_analysis(job_id: int, ctx: Context = Depends(get_context)):
+    """Анализ объема: совпадения TM (exact/fuzzy-банды), повторы, взвешенные
+    слова — котировка и оценка «остатка» до начала перевода."""
+    job = job_or_404(ctx, job_id)
+    ensure_job_access(ctx, job)
+    return leveraging.analyze_job(ctx.db, job)
+
+
+@router.post("/jobs/{job_id}/pre-translate", response_model=schemas.PreTranslateResult)
+async def pre_translate_job(
+    job_id: int, body: schemas.PreTranslateRequest, ctx: Context = Depends(get_context)
+):
+    """Пред-перевод из TM (batch): пустые сегменты заполняются лучшими
+    совпадениями >= min_score, затем повторами внутри задания.
+
+    Результат — черновики без подтверждения: даже 100% совпадения вычитываются
+    переводчиком (практика CAT), QA требует подтверждения каждого сегмента.
+    """
+    job = job_or_404(ctx, job_id)
+    if not can_manage(ctx) and job.assignee_id != ctx.user_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Job is not assigned to you")
+    if job.status not in EDITABLE_STATUSES:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"Job status '{job.status}' does not allow editing",
+        )
+    result = leveraging.pre_translate(ctx.db, job, ctx.user_id, body.min_score)
+    audit.audit(
+        ctx.db, ctx.org_id, ctx.user_id, "job.pre_translate", "job", job.id,
+        {**result, "min_score": body.min_score},
+    )
+    ctx.db.commit()
+    await manager.send_users(
+        org_member_ids(ctx.db, ctx.org_id),
+        make_event("job_pretranslated", job_id=job.id, user=ctx.user.username, **result),
+    )
+    return result
 
 
 @router.post("/jobs/{job_id}/submit", response_model=schemas.JobOut)
@@ -328,6 +389,36 @@ def export_job(job_id: int, ctx: Context = Depends(get_context)):
         content=exported,
         media_type=media_types[fmt],
         headers={"Content-Disposition": content_disposition(filename)},
+    )
+
+
+@router.get("/jobs/{job_id}/export-bilingual")
+def export_bilingual(job_id: int, ctx: Context = Depends(get_context)):
+    """Двуязычная выгрузка DOCX для ревью/заказчика: таблица №/исходник/перевод.
+
+    Доступна исполнителю и менеджменту на любом статусе — в отличие от
+    экспорта перевода (только после сдачи), ревью-копия не является
+    «готовым продуктом» и не раскрывается вне круга проекта.
+    """
+    job = job_or_404(ctx, job_id)
+    ensure_job_access(ctx, job)
+    rows = [(s.position + 1, s.source_text, s.target_text) for s in job.segments]
+    payload = docx_io.render_bilingual(
+        f"{job.document.name} — {job.project.source_lang}\u2192{job.target_lang}",
+        job.project.source_lang,
+        job.target_lang,
+        rows,
+    )
+    base, _ = os.path.splitext(job.document.name)
+    audit.audit(
+        ctx.db, ctx.org_id, ctx.user_id, "job.export_bilingual", "job", job.id,
+        {"segments": len(rows)},
+    )
+    ctx.db.commit()
+    return Response(
+        content=payload,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": content_disposition(f"{base}_{job.target_lang}_bilingual.docx")},
     )
 
 

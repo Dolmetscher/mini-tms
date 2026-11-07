@@ -16,6 +16,18 @@ FUZZY_MAX_SUGGESTIONS = 5
 # Ручной конкорданс (поиск вхождения слова/фразы): список длиннее автоподсказок.
 CONCORDANCE_MAX_RESULTS = 20
 
+# Анализ объема (котировка): доля «оплачиваемых» слов по категориям совпадений.
+# Веса — распространенная industry-практика (аналог банд Trados/memoQ);
+# настраиваются env-переменными при другом прайсе.
+ANALYSIS_EXACT_WEIGHT = float(os.environ.get("TMS_ANALYSIS_EXACT_WEIGHT", "0.30"))
+ANALYSIS_REPETITION_WEIGHT = float(os.environ.get("TMS_ANALYSIS_REPETITION_WEIGHT", "0.30"))
+ANALYSIS_BANDS = (  # (нижняя граница %, верхняя граница %, вес)
+    (95, 99, 0.60),
+    (85, 94, 0.75),
+    (75, 84, 0.85),
+    (60, 74, 1.00),
+)
+
 # Машинный перевод (FR-08): none | libretranslate | mock. Ключи только на сервере.
 MT_PROVIDER = os.environ.get("TMS_MT_PROVIDER", "none")
 MT_URL = os.environ.get("TMS_MT_URL", "https://libretranslate.com/translate")
