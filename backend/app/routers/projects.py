@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
@@ -7,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import config, models, schemas
 from ..database import SessionLocal
 from ..deps import Context, get_context
-from ..fuzzy import normalize, similarity_ratio
+from ..fuzzy import length_bound_ratio, normalize, similarity_ratio
 from ..formats import segmentation
 from ..helpers import can_manage, ensure_project_access, naive_utc, project_or_404, utcnow
 from ..services import audit, words
@@ -269,9 +270,17 @@ def concordance(
     project_id: int,
     text: str = Query(min_length=1),
     target_lang: str = Query(min_length=2),
+    side: str = Query(default="source", pattern="^(source|target)$"),
+    mode: str = Query(default="match", pattern="^(match|concordance)$"),
     ctx: Context = Depends(get_context),
 ):
-    """Конкордансный + fuzzy поиск по подключенным TM проекта (FR-06)."""
+    """Поиск по подключенным TM проекта (FR-06).
+
+    mode=match — автоподсказка при выборе сегмента: точные и fuzzy совпадения
+    полной фразы (side=source) либо ранее переведённого текста (side=target).
+    mode=concordance — конкорданс: сегменты, СОДЕРЖАЩИЕ запрос как слово/фразу
+    (поиск вхождения по границе слова — «как это переводилось раньше»).
+    """
     project = project_or_404(ctx, project_id)
     ensure_project_access(ctx, project)
     if target_lang not in project.target_langs:
@@ -290,13 +299,34 @@ def concordance(
         )
         .all()
     )
+
+    if mode == "concordance":
+        # Поиск вхождения по границе слова; сортировка по «покрытию» —
+        # какую долю сегмента занимает запрос (точное совпадение = 100).
+        word_re = re.compile(rf"(?<!\w){re.escape(wanted)}(?!\w)")
+        for _, tm in resources:
+            for entry in ctx.db.query(models.TMEntry).filter(models.TMEntry.tm_id == tm.id).all():
+                haystack = entry.source_text if side == "source" else entry.target_text
+                if not word_re.search(normalize(haystack)):
+                    continue
+                coverage = min(99, int(round(len(wanted) / max(1, len(normalize(haystack))) * 100)))
+                if normalize(haystack) == wanted:
+                    coverage = 100
+                results.append(schemas.TMSuggestionOut(
+                    source_match=entry.source_text, target_suggestion=entry.target_text,
+                    match_percentage=coverage, tm_name=tm.name, match_type="concordance",
+                ))
+        results.sort(key=lambda r: r.match_percentage, reverse=True)
+        return results[: config.CONCORDANCE_MAX_RESULTS]
+
     for _, tm in resources:
         exact, scored = [], []
         for entry in ctx.db.query(models.TMEntry).filter(models.TMEntry.tm_id == tm.id).all():
-            if normalize(entry.source_text) == wanted:
+            haystack = entry.source_text if side == "source" else entry.target_text
+            if normalize(haystack) == wanted:
                 exact.append(entry)
-            else:
-                score = similarity_ratio(text, entry.source_text)
+            elif length_bound_ratio(text, haystack) >= config.FUZZY_MIN_SCORE:
+                score = similarity_ratio(text, haystack)
                 if score >= config.FUZZY_MIN_SCORE:
                     scored.append((score, entry))
         for entry in exact:

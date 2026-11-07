@@ -1,10 +1,14 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
+from lxml import etree
 from sqlalchemy.orm import Session
 
 from .. import config, models, schemas
 from ..deps import Context, get_context
-from ..fuzzy import normalize, similarity_ratio
-from ..helpers import can_manage
+from ..fuzzy import length_bound_ratio, normalize, similarity_ratio
+from ..helpers import can_manage, content_disposition
 from ..services import audit
 
 router = APIRouter(prefix="/api/tm", tags=["tm"])
@@ -132,6 +136,56 @@ def import_tmx(tm_id: int, file: UploadFile = File(...), ctx: Context = Depends(
     return {"added": added, "updated": updated, "skipped": skipped}
 
 
+def _tmx_timestamp(dt: datetime) -> str:
+    """TMX-формат метки времени (UTC): YYYYMMDDTHHMMSSZ."""
+    return dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ") if dt.tzinfo \
+        else dt.strftime("%Y%m%dT%H%M%SZ")
+
+
+@router.get("/tms/{tm_id}/export")
+def export_tmx(tm_id: int, ctx: Context = Depends(get_context)):
+    """Экспорт TM в TMX 1.4b (FR-12, обратимость: файл совместим с нашим же импортом)."""
+    ctx.require_role("admin", "pm")
+    tm = _tm_or_404(ctx, tm_id)
+    entries = (
+        ctx.db.query(models.TMEntry)
+        .filter(models.TMEntry.tm_id == tm.id)
+        .order_by(models.TMEntry.id)
+        .all()
+    )
+
+    XML_NS = "http://www.w3.org/XML/1998/namespace"
+    root = etree.Element("tmx", version="1.4")
+    header = etree.SubElement(root, "header", {
+        "creationtool": "Mini-TMS",
+        "creationtoolversion": "0.2.0",
+        "segtype": "sentence",
+        "o-tmf": "mini-tms",
+        "adminlang": "en",
+        "srclang": tm.source_lang,
+        "datatype": "plaintext",
+        "creationdate": _tmx_timestamp(models.utcnow()),
+    })
+    body = etree.SubElement(root, "body")
+    for entry in entries:
+        tu = etree.SubElement(body, "tu", {"creationdate": _tmx_timestamp(entry.updated_at)})
+        for lang, text in ((tm.source_lang, entry.source_text), (tm.target_lang, entry.target_text)):
+            tuv = etree.SubElement(tu, "tuv", {f"{{{XML_NS}}}lang": lang})
+            seg = etree.SubElement(tuv, "seg")
+            seg.text = text
+    payload = etree.tostring(
+        root, xml_declaration=True, encoding="UTF-8", pretty_print=True
+    )
+    safe_name = tm.name.replace('"', "")
+    audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tm.export_tmx", "tm", tm.id, {"entries": len(entries)})
+    ctx.db.commit()
+    return Response(
+        content=payload,
+        media_type="application/x-tmx+xml",
+        headers={"Content-Disposition": content_disposition(f"{safe_name}.tmx")},
+    )
+
+
 @router.delete("/tms/{tm_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_tm(tm_id: int, ctx: Context = Depends(get_context)):
     ctx.require_role("admin", "pm")
@@ -165,6 +219,9 @@ def suggest(
             exact.append(schemas.TMSuggestionOut(
                 source_match=entry.source_text, target_suggestion=entry.target_text,
                 match_percentage=100, tm_name=tm.name, match_type="exact"))
+            continue
+        # Дешевый pre-filter: схожесть не выше (max-|Δlen|)/max — Левенштейн не нужен.
+        if length_bound_ratio(text, entry.source_text) < config.FUZZY_MIN_SCORE:
             continue
         score = similarity_ratio(text, entry.source_text)
         if score >= config.FUZZY_MIN_SCORE:

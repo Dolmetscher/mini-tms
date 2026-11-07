@@ -13,6 +13,8 @@ DATA_DIR = os.environ.get("TMS_DATA_DIR", "./data")
 
 FUZZY_MIN_SCORE = int(os.environ.get("TMS_FUZZY_MIN_SCORE", "60"))
 FUZZY_MAX_SUGGESTIONS = 5
+# Ручной конкорданс (поиск вхождения слова/фразы): список длиннее автоподсказок.
+CONCORDANCE_MAX_RESULTS = 20
 
 # Машинный перевод (FR-08): none | libretranslate | mock. Ключи только на сервере.
 MT_PROVIDER = os.environ.get("TMS_MT_PROVIDER", "none")

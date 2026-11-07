@@ -2,11 +2,12 @@ import csv
 import io
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..deps import Context, get_context
-from ..helpers import can_manage
+from ..helpers import can_manage, content_disposition
 from ..services import audit
 
 router = APIRouter(prefix="/api/tb", tags=["tb"])
@@ -113,6 +114,34 @@ def import_csv(tb_id: int, file: UploadFile = File(...), ctx: Context = Depends(
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tb.import_csv", "tb", tb.id, {"added": added, "skipped": skipped})
     ctx.db.commit()
     return {"added": added, "skipped": skipped}
+
+
+@router.get("/tbs/{tb_id}/export")
+def export_csv(tb_id: int, ctx: Context = Depends(get_context)):
+    """Экспорт TB в CSV — тот же шаблон, что и импорт (term,translation,note,status)."""
+    ctx.require_role("admin", "pm")
+    tb = _tb_or_404(ctx, tb_id)
+    entries = (
+        ctx.db.query(models.TBEntry)
+        .filter(models.TBEntry.tb_id == tb.id)
+        .order_by(models.TBEntry.id)
+        .all()
+    )
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["term", "translation", "note", "status"])
+    for entry in entries:
+        writer.writerow([entry.term, entry.translation, entry.note, entry.status])
+    safe_name = tb.name.replace('"', "")
+    audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tb.export_csv", "tb", tb.id, {"entries": len(entries)})
+    ctx.db.commit()
+    # utf-8-sig: BOM нужен Excel'ю для корректного отображения кириллицы;
+    # наш импорт читает utf-8-sig и BOM отбрасывает — полный roundtrip.
+    return Response(
+        content=buffer.getvalue().encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": content_disposition(f"{safe_name}.csv")},
+    )
 
 
 @router.delete("/tbs/{tb_id}", status_code=status.HTTP_204_NO_CONTENT)
