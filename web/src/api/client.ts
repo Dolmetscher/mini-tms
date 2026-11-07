@@ -50,15 +50,16 @@ export function exportJobUrl(jobId: number): string {
   return `${API_BASE}/api/jobs/${jobId}/export`;
 }
 
-/** Скачивание выгрузки задания: обычная <a href> не передает токен, поэтому
- * запрашиваем файл fetch-ом с заголовками авторизации и сохраняем как blob. */
-export async function downloadJobExport(jobId: number): Promise<void> {
+/** Скачивание файла с авторизацией: обычная <a href> не передает токен, поэтому
+ * запрашиваем файл fetch-ом с заголовками и сохраняем как blob.
+ * filename* (RFC 5987, UTF-8) имеет приоритет над ASCII-fallback в filename="". */
+export async function downloadFile(path: string, fallbackName: string): Promise<void> {
   const headers = new Headers();
   if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
   if (activeOrgId) headers.set('X-Org-Id', String(activeOrgId));
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}/api/jobs/${jobId}/export`, { headers });
+    res = await fetch(`${API_BASE}${path}`, { headers });
   } catch {
     throw new ApiError(0, 'No connection');
   }
@@ -73,7 +74,9 @@ export async function downloadJobExport(jobId: number): Promise<void> {
     throw new ApiError(res.status, detail);
   }
   const disposition = res.headers.get('Content-Disposition') ?? '';
-  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `job-${jobId}-export`;
+  const utf8Name = /filename\*=UTF-8''([^;]+)/.exec(disposition)?.[1];
+  const asciiName = /filename="([^"]+)"/.exec(disposition)?.[1];
+  const filename = (utf8Name && decodeURIComponent(utf8Name)) || asciiName || fallbackName;
   const url = URL.createObjectURL(await res.blob());
   const link = document.createElement('a');
   link.href = url;
@@ -82,6 +85,18 @@ export async function downloadJobExport(jobId: number): Promise<void> {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+export async function downloadJobExport(jobId: number): Promise<void> {
+  return downloadFile(`/api/jobs/${jobId}/export`, `job-${jobId}-export`);
+}
+
+export async function downloadTmExport(tmId: number): Promise<void> {
+  return downloadFile(`/api/tm/tms/${tmId}/export`, `tm-${tmId}.tmx`);
+}
+
+export async function downloadTbExport(tbId: number): Promise<void> {
+  return downloadFile(`/api/tb/tbs/${tbId}/export`, `tb-${tbId}.csv`);
 }
 
 export class ApiError extends Error {
@@ -159,8 +174,11 @@ export const api = {
     request<Resource>(`/api/projects/${projectId}/resources`, { method: 'POST', body: JSON.stringify(body) }),
   disconnectResource: (projectId: number, resourceId: number) =>
     request<void>(`/api/projects/${projectId}/resources/${resourceId}`, { method: 'DELETE' }),
-  tmSearch: (projectId: number, text: string, targetLang: string) =>
-    request<TMSuggestion[]>(`/api/projects/${projectId}/tm/search${q({ text, target_lang: targetLang })}`),
+  tmSearch: (
+    projectId: number, text: string, targetLang: string,
+    side: 'source' | 'target' = 'source', mode: 'match' | 'concordance' = 'match',
+  ) =>
+    request<TMSuggestion[]>(`/api/projects/${projectId}/tm/search${q({ text, target_lang: targetLang, side, mode })}`),
   tbLookup: (projectId: number, text: string, targetLang: string) =>
     request<TBHit[]>(`/api/projects/${projectId}/tb/lookup${q({ text, target_lang: targetLang })}`),
 

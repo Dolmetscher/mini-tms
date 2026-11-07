@@ -35,6 +35,7 @@ export default function EditorPage() {
   const [suggestions, setSuggestions] = useState<TMSuggestion[]>([]);
   const [concordance, setConcordance] = useState('');
   const [concordanceResults, setConcordanceResults] = useState<TMSuggestion[]>([]);
+  const [concSide, setConcSide] = useState<'source' | 'target'>('source');
   const [tbHits, setTbHits] = useState<TBHit[]>([]);
   const [mt, setMt] = useState<MTSuggestion | null>(null);
   const [mtBusy, setMtBusy] = useState(false);
@@ -183,13 +184,18 @@ export default function EditorPage() {
     let list = job.segments;
     if (filter === 'untranslated') list = list.filter((s) => s.translation_status === 'untranslated');
     if (filter === 'unconfirmed') list = list.filter((s) => !s.confirmed);
+    if (filter === 'qa' && qaReport) {
+      // Только сегменты с замечаниями последнего QA-отчета (FR-09: переход к проблеме)
+      const flagged = new Set(qaReport.items.map((item) => item.segment_id));
+      list = list.filter((s) => flagged.has(s.id));
+    }
     if (search.trim()) {
       const needle = search.trim().toLowerCase();
       list = list.filter((s) =>
         s.source_text.toLowerCase().includes(needle) || s.target_text.toLowerCase().includes(needle));
     }
     return list;
-  }, [job, filter, search]);
+  }, [job, filter, search, qaReport]);
 
   if (!token) return <Navigate to="/login" replace />;
   if (!job) return <div className="muted center">{error || 'Loading…'}</div>;
@@ -266,7 +272,17 @@ export default function EditorPage() {
   const runConcordance = async () => {
     if (!job || !concordance.trim()) return;
     try {
-      setConcordanceResults(await api.tmSearch(job.project_id, concordance, job.target_lang));
+      // Ручной конкорданс: сегменты, содержащие запрос как слово/фразу
+      setConcordanceResults(await api.tmSearch(job.project_id, concordance, job.target_lang, concSide, 'concordance'));
+    } catch {
+      setConcordanceResults([]);
+    }
+  };
+
+  const runConcordanceSide = async (side: 'source' | 'target') => {
+    if (!job || !concordance.trim()) return;
+    try {
+      setConcordanceResults(await api.tmSearch(job.project_id, concordance, job.target_lang, side, 'concordance'));
     } catch {
       setConcordanceResults([]);
     }
@@ -327,7 +343,7 @@ export default function EditorPage() {
             {f === 'all' ? 'All' : f === 'untranslated' ? 'Untranslated' : 'Unconfirmed'}
           </button>
         ))}
-        <button className={`btn small ${filter === 'qa' ? 'primary' : ''}`} onClick={() => { setFilter('all'); void openQa(); }}>
+        <button className={`btn small ${filter === 'qa' ? 'primary' : ''}`} onClick={() => { setFilter(filter === 'qa' ? 'all' : 'qa'); void openQa(); }}>
           QA issues
         </button>
         <span className="spacer" />
@@ -436,6 +452,9 @@ export default function EditorPage() {
                     onChange={(e) => onChangeDraft(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.ctrlKey && e.key === 'Enter') void confirmAndNext();
+                      // Alt+↓/↑ — переход к следующему/предыдущему сегменту (стандарт CAT)
+                      if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); goto(1); }
+                      if (e.altKey && e.key === 'ArrowUp') { e.preventDefault(); goto(-1); }
                     }}
                     placeholder="Type translation here…"
                     rows={4}
@@ -443,7 +462,7 @@ export default function EditorPage() {
                   />
                   <div className="row wrap">
                     <button className="btn primary" onClick={() => void confirmAndNext()}>Confirm & Next</button>
-                    <span className="muted small-text">Ctrl+Enter</span>
+                    <span className="muted small-text">Ctrl+Enter · Alt+↑/↓</span>
                     <span className="spacer" />
                     <button className="btn small" onClick={() => void runMt()} disabled={mtBusy}>
                       {mtBusy ? 'MT…' : 'Get MT'}
@@ -458,11 +477,22 @@ export default function EditorPage() {
                   )}
                   <div className="row" style={{ marginTop: 8 }}>
                     <input
-                      placeholder="Concordance search…" value={concordance}
+                      placeholder={concSide === 'source' ? 'Concordance (source)…' : 'Concordance (target)…'}
+                      value={concordance}
                       onChange={(e) => setConcordance(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') void runConcordance(); }}
                       style={{ flex: 1 }}
                     />
+                    <button
+                      className={`btn small ${concSide === 'source' ? 'primary' : ''}`}
+                      title="Поиск по исходникам TM (fuzzy)"
+                      onClick={() => { setConcSide('source'); void runConcordanceSide('source'); }}
+                    >Src</button>
+                    <button
+                      className={`btn small ${concSide === 'target' ? 'primary' : ''}`}
+                      title="Поиск по переводам TM: как это уже переводилось"
+                      onClick={() => { setConcSide('target'); void runConcordanceSide('target'); }}
+                    >Tgt</button>
                     <button className="btn small" onClick={() => void runConcordance()}>Search TM</button>
                   </div>
                   {concordanceResults.length > 0 && (

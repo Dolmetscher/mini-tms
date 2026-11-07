@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api } from '../api/client';
+import { api, downloadTbExport, downloadTmExport } from '../api/client';
 import type { TBEntry, TBInfo, TMEntry, TMInfo } from '../api/types';
 
 type Tab = 'tm' | 'tb';
@@ -57,6 +57,14 @@ export default function ResourcesPage() {
     }
   };
 
+  const exportTm = (tmId: number) => {
+    void act(async () => downloadTmExport(tmId));
+  };
+
+  const exportTb = (tbId: number) => {
+    void act(async () => downloadTbExport(tbId));
+  };
+
   return (
     <>
       <section className="card row">
@@ -80,15 +88,21 @@ export default function ResourcesPage() {
               Create TM
             </button>
             {selectedTm && (
-              <label className="btn small" style={{ cursor: 'pointer' }}>
-                Import TMX…
-                <input type="file" accept=".tmx,.xml" hidden
-                       onChange={(e) => {
-                         const f = e.target.files?.[0];
-                         if (f && selectedTm) void act(() => api.importTMX(selectedTm, f));
-                         if (e.target) e.target.value = '';
-                       }} />
-              </label>
+              <>
+                <label className="btn small" style={{ cursor: 'pointer' }}>
+                  Import TMX…
+                  <input type="file" accept=".tmx,.xml" hidden
+                         onChange={(e) => {
+                           const f = e.target.files?.[0];
+                           if (f && selectedTm) void act(() => api.importTMX(selectedTm, f));
+                           if (e.target) e.target.value = '';
+                         }} />
+                </label>
+                <button className="btn small" onClick={() => exportTm(selectedTm)}
+                        title="Экспорт в TMX 1.4b — обмен памятью с другими CAT-инструментами">
+                  Export TMX
+                </button>
+              </>
             )}
           </section>
 
@@ -139,15 +153,21 @@ export default function ResourcesPage() {
               Create TB
             </button>
             {selectedTb && (
-              <label className="btn small" style={{ cursor: 'pointer' }}>
-                Import CSV…
-                <input type="file" accept=".csv,text/csv" hidden
-                       onChange={(e) => {
-                         const f = e.target.files?.[0];
-                         if (f && selectedTb) void act(() => api.importTB(selectedTb, f));
-                         if (e.target) e.target.value = '';
-                       }} />
-              </label>
+              <>
+                <label className="btn small" style={{ cursor: 'pointer' }}>
+                  Import CSV…
+                  <input type="file" accept=".csv,text/csv" hidden
+                         onChange={(e) => {
+                           const f = e.target.files?.[0];
+                           if (f && selectedTb) void act(() => api.importTB(selectedTb, f));
+                           if (e.target) e.target.value = '';
+                         }} />
+                </label>
+                <button className="btn small" onClick={() => exportTb(selectedTb)}
+                        title="Экспорт в CSV (term,translation,note,status) — тот же шаблон, что и импорт">
+                  Export CSV
+                </button>
+              </>
             )}
           </section>
 

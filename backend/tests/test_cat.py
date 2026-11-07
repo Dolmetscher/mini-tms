@@ -594,3 +594,187 @@ def test_csv_import_case_insensitive_headers(client, pm):
     assert res.json() == {"added": 1, "skipped": 0}
     entries = client.get(f"/api/tb/tbs/{tb}/entries", headers=pm).json()
     assert any(e["term"] == "platform" for e in entries)
+
+
+# --- QA: дополнительные проверки по переводческим практикам (только предупреждения) ---
+
+
+def test_qa_best_practice_checks(client, pm, ann):
+    res = client.post("/api/projects", headers=pm, json={
+        "name": "QA practices", "source_lang": "en", "target_langs": ["ru"],
+    })
+    project = res.json()["id"]
+    content = "\n".join([
+        "Press the button.",          # двойной пробел и повтор слова
+        "See details (attached).",    # несбалансированная скобка
+        "Save the file.",             # нет конечной пунктуации
+        "Terms and conditions.",      # перевод совпадает с исходником
+    ])
+    client.post(f"/api/projects/{project}/documents", headers=pm,
+                files={"file": ("qa2.txt", io.BytesIO(content.encode()), "text/plain")})
+    job = next(j for j in client.get(f"/api/jobs?project_id={project}", headers=pm).json())
+
+    members = client.get(f"/api/orgs/{ORG}/members", headers=pm).json()
+    ann_id = next(m["user"]["id"] for m in members if m["user"]["username"] == "ann")
+    client.post(f"/api/jobs/{job['id']}/assign", headers=pm, json={"assignee_id": ann_id})
+    client.post(f"/api/jobs/{job['id']}/accept", headers=ann)
+    detail = client.get(f"/api/jobs/{job['id']}", headers=ann).json()
+    seg_space, seg_bracket, seg_punct, seg_identical = detail["segments"]
+
+    for seg, text in (
+        (seg_space, "Нажмите  кнопку кнопку  сейчас."),   # double space + repeated word
+        (seg_bracket, "Смотрите подробности (приложено."),  # unbalanced bracket
+        (seg_punct, "Сохраните файл"),                     # нет конечной точки
+        (seg_identical, "Terms and conditions."),          # идентично исходнику
+    ):
+        client.patch(f"/api/segments/{seg['id']}", headers=ann,
+                    json={"target_text": text, "confirmed": True})
+
+    report = client.get(f"/api/jobs/{job['id']}/qa", headers=ann).json()
+    codes = [i["code"] for i in report["items"]]
+    assert "whitespace" in codes
+    assert "repeated_word" in codes
+    assert "brackets" in codes
+    assert "final_punctuation" in codes
+    assert "identical_translation" in codes
+    # предупреждения не блокируют сдачу: блокирующих ошибок нет
+    assert report["blocking_count"] == 0
+    assert report["can_submit"] is True
+    assert client.post(f"/api/jobs/{job['id']}/submit", headers=ann).status_code == 200
+
+
+# --- TMX: экспорт и обратный импорт (roundtrip) ---
+
+
+def test_tmx_export_roundtrip(client, pm):
+    res = client.post("/api/tm/tms", headers=pm, json={"name": "Export TM", "source_lang": "en", "target_lang": "ru"})
+    tm = res.json()["id"]
+    client.post(f"/api/tm/tms/{tm}/entries", headers=pm,
+                json={"source_text": "Save & exit", "target_text": "Сохранить и выйти"})
+    client.post(f"/api/tm/tms/{tm}/entries", headers=pm,
+                json={"source_text": 'Quotes "test"', "target_text": "Кавычки «тест»"})
+
+    res = client.get(f"/api/tm/tms/{tm}/export", headers=pm)
+    assert res.status_code == 200
+    assert "tmx" in res.headers["content-type"]
+    root = etree.fromstring(res.content)
+    assert root.get("version") == "1.4"
+    tus = root.findall("body/tu")
+    assert len(tus) == 2
+    segs = [t.findtext("tuv/seg") for t in tus]
+    assert "Save & exit" in segs  # спецсимволы экранированы и восстановлены
+
+    # roundtrip: экспорт импортируется в новую TM без потерь
+    export_bytes = client.get(f"/api/tm/tms/{tm}/export", headers=pm).content
+    res = client.post("/api/tm/tms", headers=pm, json={"name": "Roundtrip TM", "source_lang": "en", "target_lang": "ru"})
+    tm2 = res.json()["id"]
+    res = client.post(f"/api/tm/tms/{tm2}/import-tmx", headers=pm,
+                      files={"file": ("export.tmx", io.BytesIO(export_bytes), "application/x-tmx+xml")})
+    assert res.json() == {"added": 2, "updated": 0, "skipped": 0}
+    entries = client.get(f"/api/tm/tms/{tm2}/entries", headers=pm).json()
+    assert {e["source_text"]: e["target_text"] for e in entries} == {
+        "Save & exit": "Сохранить и выйти",
+        'Quotes "test"': "Кавычки «тест»",
+    }
+
+
+# --- TB: CSV-экспорт и обратный импорт (roundtrip) ---
+
+
+def test_tb_csv_export_roundtrip(client, pm):
+    res = client.post("/api/tb/tbs", headers=pm, json={"name": "Export TB", "source_lang": "en", "target_lang": "ru"})
+    tb = res.json()["id"]
+    client.post(f"/api/tb/tbs/{tb}/entries", headers=pm,
+                json={"term": "dashboard", "translation": "панель", "note": "не «дашборд»", "status": "preferred"})
+    client.post(f"/api/tb/tbs/{tb}/entries", headers=pm,
+                json={"term": "fast", "translation": "быстренько", "note": "разговорное", "status": "forbidden"})
+
+    res = client.get(f"/api/tb/tbs/{tb}/export", headers=pm)
+    assert res.status_code == 200
+    assert "csv" in res.headers["content-type"]
+    csv_bytes = res.content
+    text = csv_bytes.decode("utf-8-sig")
+    assert text.splitlines()[0] == "term,translation,note,status"
+    assert "быстренько" in text
+
+    res = client.post("/api/tb/tbs", headers=pm, json={"name": "Roundtrip TB", "source_lang": "en", "target_lang": "ru"})
+    tb2 = res.json()["id"]
+    res = client.post(f"/api/tb/tbs/{tb2}/import-csv", headers=pm,
+                      files={"file": ("export.csv", io.BytesIO(csv_bytes), "text/csv")})
+    assert res.json()["added"] == 2
+    entries = client.get(f"/api/tb/tbs/{tb2}/entries", headers=pm).json()
+    by_term = {e["term"]: e for e in entries}
+    assert by_term["dashboard"]["translation"] == "панель"
+    assert by_term["dashboard"]["status"] == "preferred"
+    assert by_term["fast"]["status"] == "forbidden"
+
+
+# --- конкорданс по целевому языку (side=target) ---
+
+
+def test_concordance_target_side(client, pm, ann):
+    res = client.post("/api/projects", headers=pm, json={
+        "name": "Concordance", "source_lang": "en", "target_langs": ["ru"],
+    })
+    project = res.json()["id"]
+    res = client.post("/api/tm/tms", headers=pm, json={"name": "Conc TM", "source_lang": "en", "target_lang": "ru"})
+    tm = res.json()["id"]
+    client.post(f"/api/tm/tms/{tm}/entries", headers=pm,
+                json={"source_text": "The invoice has been paid.", "target_text": "Счет оплачен полностью."})
+    client.post(f"/api/projects/{project}/resources", headers=pm, json={"tm_id": tm})
+    # задание переводчику, чтобы был доступ к конкордансу проекта
+    client.post(f"/api/projects/{project}/documents", headers=pm,
+                files={"file": ("conc.txt", io.BytesIO(b"Some text."), "text/plain")})
+    job = next(j for j in client.get(f"/api/jobs?project_id={project}", headers=pm).json())
+    members = client.get(f"/api/orgs/{ORG}/members", headers=pm).json()
+    ann_id = next(m["user"]["id"] for m in members if m["user"]["username"] == "ann")
+    client.post(f"/api/jobs/{job['id']}/assign", headers=pm, json={"assignee_id": ann_id})
+
+    # поиск по целевому языку находит перевод
+    res = client.get(f"/api/projects/{project}/tm/search", headers=ann,
+                     params={"text": "Счет оплачен полностью.", "target_lang": "ru", "side": "target"})
+    matches = res.json()
+    assert matches and matches[0]["match_percentage"] == 100
+    assert matches[0]["source_match"] == "The invoice has been paid."
+
+    # а поиск по исходникам этот текст не находит
+    res = client.get(f"/api/projects/{project}/tm/search", headers=ann,
+                     params={"text": "Счет оплачен полностью.", "target_lang": "ru"})
+    assert res.json() == []
+
+    # конкорданс по слову: «как переводили слово invoice» — поиск вхождения
+    res = client.get(f"/api/projects/{project}/tm/search", headers=ann,
+                     params={"text": "invoice", "target_lang": "ru", "mode": "concordance"})
+    matches = res.json()
+    assert matches and matches[0]["match_type"] == "concordance"
+    assert matches[0]["target_suggestion"] == "Счет оплачен полностью."
+
+    # конкорданс по слову из перевода (side=target)
+    res = client.get(f"/api/projects/{project}/tm/search", headers=ann,
+                     params={"text": "оплачен", "target_lang": "ru", "side": "target", "mode": "concordance"})
+    matches = res.json()
+    assert matches and matches[0]["match_type"] == "concordance"
+
+    # слово с тем же корнем, но другим окончанием не матчится (граница слова)
+    res = client.get(f"/api/projects/{project}/tm/search", headers=ann,
+                     params={"text": "оплачено", "target_lang": "ru", "side": "target", "mode": "concordance"})
+    assert res.json() == []
+
+    # некорректный side отвергается
+    res = client.get(f"/api/projects/{project}/tm/search", headers=ann,
+                     params={"text": "x", "target_lang": "ru", "side": "both"})
+    assert res.status_code == 422
+
+
+# --- подсчет слов: языки без пробелов (CJK) ---
+
+
+def test_cjk_word_count():
+    from app.services.words import count_words
+
+    assert count_words("Hello world") == 2
+    assert count_words("你好世界") == 4              # каждая идеограмма — слово
+    assert count_words("こんにちは") == 5              # хирагана
+    assert count_words("안녕하세요") == 5              # хангыль
+    assert count_words("Mix 混合 text") == 4          # 1 + 2 + 1
+    assert count_words('Тег <x id="1"/> не в счет') == 4  # тег не считается
