@@ -198,6 +198,46 @@ class Segment(Base):
     job: Mapped["Job"] = relationship(back_populates="segments")
 
 
+class SegmentNote(Base):
+    """Комментарий к сегменту: диалог переводчик ↔ менеджер/ревьюер.
+
+    Практика CAT-инструментов (Trados/memoQ comments): обсуждение конкретного
+    сегмента ведется рядом с текстом, а не в почте — контекст не теряется.
+    """
+    __tablename__ = "segment_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    segment_id: Mapped[int] = mapped_column(ForeignKey("segments.id"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    author: Mapped["User"] = relationship()
+
+
+class LQAError(Base):
+    """Ошибка качества, размеченная ревьюером (LQA/MQM-подобная методология).
+
+    Категории и серьёзность — упрощенный MQM; штрафные баллы настраиваются
+    в config. Оценка = 100 − штраф×1000/слов (практика LQA-скоринга на
+    1000 слов, аналогично memoQ LQA / TAUS DQF).
+    """
+    __tablename__ = "lqa_errors"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
+    segment_id: Mapped[int] = mapped_column(ForeignKey("segments.id"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    # accuracy | terminology | fluency | style | locale | consistency
+    category: Mapped[str] = mapped_column(String(16))
+    # minor | major | critical
+    severity: Mapped[str] = mapped_column(String(8))
+    comment: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    author: Mapped["User"] = relationship()
+
+
 class JobReminder(Base):
     __tablename__ = "job_reminders"
     __table_args__ = (UniqueConstraint("job_id", "kind", name="uq_job_reminder"),)

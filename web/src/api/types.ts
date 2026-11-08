@@ -168,6 +168,55 @@ export interface PreTranslateResult {
   skipped: number;
 }
 
+// --- LQA (оценка качества перевода) ---
+
+export type LQACategory = 'accuracy' | 'terminology' | 'fluency' | 'style' | 'locale' | 'consistency';
+export type LQASeverity = 'minor' | 'major' | 'critical';
+
+export interface LQAError {
+  id: number;
+  job_id: number;
+  segment_id: number;
+  position: number;
+  category: string;
+  severity: string;
+  penalty: number;
+  comment: string;
+  author: User;
+  created_at: string;
+}
+
+export interface LQACategoryStat {
+  category: string;
+  label: string;
+  count: number;
+  penalty: number;
+}
+
+export interface LQAReport {
+  job_id: number;
+  words: number;
+  errors: LQAError[];
+  error_count: number;
+  penalty_points: number;
+  score: number;
+  pass_score: number;
+  passed: boolean;
+  by_category: LQACategoryStat[];
+}
+
+// --- Комментарии к сегментам ---
+
+export interface SegmentNote {
+  id: number;
+  segment_id: number;
+  position: number;
+  author: User;
+  body: string;
+  created_at: string;
+}
+
+
 export interface AppNotification {
   id: number;
   type: string;

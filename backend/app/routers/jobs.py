@@ -17,7 +17,7 @@ from ..helpers import (
     org_member_ids,
     serialize_job,
 )
-from ..services import audit, leveraging, notify, qa
+from ..services import audit, lqa, leveraging, notify, qa
 from ..services.mt import MTError, get_provider
 from ..ws import make_event, manager
 
@@ -255,6 +255,149 @@ def get_qa(job_id: int, ctx: Context = Depends(get_context)):
     return qa.run_qa(ctx.db, job)
 
 
+# --- LQA: оценка качества перевода (ревьюер размечает ошибки) ---
+
+
+def _segment_of_job(db: Session, job: models.Job, segment_id: int) -> models.Segment:
+    segment = db.get(models.Segment, segment_id)
+    if segment is None or segment.job_id != job.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found in this job")
+    return segment
+
+
+@router.get("/jobs/{job_id}/lqa", response_model=schemas.LQAReport)
+def get_lqa(job_id: int, ctx: Context = Depends(get_context)):
+    """LQA-отчет: размеченные ошибки, штрафные баллы, оценка на 1000 слов."""
+    job = job_or_404(ctx, job_id)
+    ensure_job_access(ctx, job)
+    return schemas.LQAReport(**lqa.job_lqa_report(ctx.db, job))
+
+
+@router.post("/jobs/{job_id}/lqa", response_model=schemas.LQAErrorOut, status_code=status.HTTP_201_CREATED)
+async def add_lqa_error(job_id: int, body: schemas.LQAErrorCreate, ctx: Context = Depends(get_context)):
+    """Разметка ошибки качества ревьюером (pm/admin): категория × серьёзность."""
+    ctx.require_role("admin", "pm")
+    job = job_or_404(ctx, job_id)
+    _segment_of_job(ctx.db, job, body.segment_id)
+    error = models.LQAError(
+        job_id=job.id,
+        segment_id=body.segment_id,
+        author_id=ctx.user_id,
+        category=body.category,
+        severity=body.severity,
+        comment=body.comment,
+    )
+    ctx.db.add(error)
+    ctx.db.flush()
+    audit.audit(ctx.db, ctx.org_id, ctx.user_id, "job.lqa_error_add", "job", job.id, {
+        "segment_id": body.segment_id, "category": body.category, "severity": body.severity,
+    })
+    ctx.db.commit()
+    report = lqa.job_lqa_report(ctx.db, job)
+    item = next(i for i in report["errors"] if i["id"] == error.id)
+    await manager.send_users(
+        org_member_ids(ctx.db, ctx.org_id),
+        make_event(
+            "lqa_error_added", job_id=job.id, segment_id=body.segment_id,
+            severity=body.severity, category=body.category, score=report["score"],
+            user=ctx.user.username,
+        ),
+    )
+    return schemas.LQAErrorOut(**item)
+
+
+@router.delete("/jobs/{job_id}/lqa/{error_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_lqa_error(job_id: int, error_id: int, ctx: Context = Depends(get_context)):
+    """Снять ошибку (например, ревьюер ошибся при разметке) — pm/admin."""
+    ctx.require_role("admin", "pm")
+    job = job_or_404(ctx, job_id)
+    error = (
+        ctx.db.query(models.LQAError)
+        .filter(models.LQAError.id == error_id, models.LQAError.job_id == job.id)
+        .first()
+    )
+    if error is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="LQA error not found")
+    ctx.db.delete(error)
+    audit.audit(ctx.db, ctx.org_id, ctx.user_id, "job.lqa_error_delete", "job", job.id, {
+        "segment_id": error.segment_id, "category": error.category,
+    })
+    ctx.db.commit()
+    report = lqa.job_lqa_report(ctx.db, job)
+    await manager.send_users(
+        org_member_ids(ctx.db, ctx.org_id),
+        make_event(
+            "lqa_error_deleted", job_id=job.id, segment_id=error.segment_id,
+            score=report["score"], user=ctx.user.username,
+        ),
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- Комментарии к сегментам (диалог переводчик ↔ менеджер) ---
+
+
+def _segment_notes(db: Session, segment: models.Segment) -> list[schemas.SegmentNoteOut]:
+    notes = (
+        db.query(models.SegmentNote)
+        .filter(models.SegmentNote.segment_id == segment.id)
+        .order_by(models.SegmentNote.created_at, models.SegmentNote.id)
+        .all()
+    )
+    return [
+        schemas.SegmentNoteOut(
+            id=note.id,
+            segment_id=segment.id,
+            position=segment.position,
+            author=schemas.UserRef(id=note.author.id, username=note.author.username),
+            body=note.body,
+            created_at=note.created_at,
+        )
+        for note in notes
+    ]
+
+
+@router.get("/segments/{segment_id}/notes", response_model=list[schemas.SegmentNoteOut])
+def list_notes(segment_id: int, ctx: Context = Depends(get_context)):
+    segment = ctx.db.get(models.Segment, segment_id)
+    if segment is None or segment.job.org_id != ctx.org_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found")
+    ensure_job_access(ctx, segment.job)
+    return _segment_notes(ctx.db, segment)
+
+
+@router.post("/segments/{segment_id}/notes", response_model=schemas.SegmentNoteOut,
+             status_code=status.HTTP_201_CREATED)
+async def add_note(segment_id: int, body: schemas.SegmentNoteCreate, ctx: Context = Depends(get_context)):
+    """Комментарий к сегменту: участник задания (исполнитель или менеджмент).
+
+    Разрешен в любом статусе — обсуждение ведется и на ревью после сдачи.
+    """
+    segment = ctx.db.get(models.Segment, segment_id)
+    if segment is None or segment.job.org_id != ctx.org_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found")
+    job = segment.job
+    if not can_manage(ctx) and job.assignee_id != ctx.user_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Job is not assigned to you")
+    note = models.SegmentNote(
+        segment_id=segment.id,
+        author_id=ctx.user_id,
+        body=body.body,
+    )
+    ctx.db.add(note)
+    ctx.db.flush()
+    ctx.db.commit()
+    await manager.send_users(
+        org_member_ids(ctx.db, ctx.org_id),
+        make_event(
+            "note_added", job_id=job.id, segment_id=segment.id,
+            position=segment.position, body=note.body,
+            user=ctx.user.username,
+        ),
+    )
+    return _segment_notes(ctx.db, segment)[-1]
+
+
 @router.get("/jobs/{job_id}/analysis", response_model=schemas.AnalysisReport)
 def get_analysis(job_id: int, ctx: Context = Depends(get_context)):
     """Анализ объема: совпадения TM (exact/fuzzy-банды), повторы, взвешенные
@@ -338,9 +481,14 @@ def return_job(job_id: int, body: schemas.ReturnRequest, ctx: Context = Depends(
     job.status = "rework"
     job.rework_comment = body.comment
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "job.return", "job", job.id, {"comment": body.comment})
-    notify.notify(ctx.db, ctx.org_id, job.assignee_id, "job_returned", {
-        "job_id": job.id, "comment": body.comment,
-    })
+    # Если ревьюер уже размечал ошибки LQA — переводчик получает оценку сразу
+    # (контекст возврата: что именно и насколько серьезно).
+    report = lqa.job_lqa_report(ctx.db, job)
+    payload = {"job_id": job.id, "comment": body.comment}
+    if report["error_count"]:
+        payload["lqa_score"] = report["score"]
+        payload["lqa_errors"] = report["error_count"]
+    notify.notify(ctx.db, ctx.org_id, job.assignee_id, "job_returned", payload)
     ctx.db.commit()
     return serialize_job(ctx.db, job)
 

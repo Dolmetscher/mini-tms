@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError, downloadBilingualExport } from '../api/client';
 import type {
-  AnalysisReport, JobDetail, MTSuggestion, QAReport, Segment, TBHit, TMSuggestion, WsEvent,
+  AnalysisReport, JobDetail, MTSuggestion, QAReport, Segment, SegmentNote, TBHit, TMSuggestion, WsEvent,
 } from '../api/types';
 import { useAuth } from '../state/AuthContext';
 import { useUpdates } from '../ws/useUpdates';
@@ -21,10 +21,53 @@ function uniqueTags(text: string): string[] {
   return [...new Set(text.match(TAG_RE) ?? [])];
 }
 
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Подсветка терминов TB в исходнике: точечное подчеркивание + перевод в tooltip.
+ * Термины сортируются по длине (длинные первыми), граница слова — чтобы
+ * «cat» не подсвечивался внутри «category». Практика CAT: переводчик видит
+ * в исходнике, какие слова имеют утвержденный перевод. */
+function renderSourceWithTerms(text: string, hits: TBHit[]): ReactNode[] {
+  const terms = [...new Set(hits.map((h) => h.term))]
+    .filter((t) => t.trim().length > 1)
+    .sort((a, b) => b.length - a.length);
+  if (!terms.length) return [text];
+  const pattern = new RegExp(
+    `(?<![\\p{L}\\p{N}])(?:${terms.map(escapeRegExp).join('|')})(?![\\p{L}\\p{N}])`,
+    'giu',
+  );
+  const byTerm = new Map(hits.map((h) => [h.term.toLowerCase(), h]));
+  const out: ReactNode[] = [];
+  let last = 0;
+  let key = 0;
+  for (const match of text.matchAll(pattern)) {
+    const term = match[0];
+    const hit = byTerm.get(term.toLowerCase());
+    if (!hit || match.index === undefined) continue;
+    if (match.index > last) out.push(text.slice(last, match.index));
+    out.push(
+      <span key={key++} className={`term-hit ${hit.status === 'forbidden' ? 'term-forbidden' : ''}`}
+            title={`${hit.status}: ${hit.translation}${hit.note ? ` — ${hit.note}` : ''}`}>
+        {term}
+      </span>,
+    );
+    last = match.index + term.length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out.length ? out : [text];
+}
+
+function fmtNoteTime(value: string): string {
+  const d = new Date(value.endsWith('Z') || value.includes('+') ? value : value + 'Z');
+  return d.toLocaleString();
+}
+
 export default function EditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const jobId = Number(id);
 
   const [job, setJob] = useState<JobDetail | null>(null);
@@ -53,6 +96,9 @@ export default function EditorPage() {
   const [findText, setFindText] = useState('');
   const [replaceText, setReplaceText] = useState('');
   const [replaceBusy, setReplaceBusy] = useState(false);
+  const [notes, setNotes] = useState<SegmentNote[]>([]);
+  const [noteText, setNoteText] = useState('');
+  const [notedIds, setNotedIds] = useState<Set<number>>(new Set());
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -161,6 +207,12 @@ export default function EditorPage() {
       api.tbLookup(job.project_id, seg.source_text, job.target_lang)
         .then(setTbHits).catch(() => setTbHits([]));
     }
+    api.segmentNotes(seg.id)
+      .then((list) => {
+        setNotes(list);
+        if (list.length) setNotedIds((prev) => new Set(prev).add(seg.id));
+      })
+      .catch(() => setNotes([]));
   }, [job]);
 
   // WS: чужие правки и смены статуса задания
@@ -184,6 +236,18 @@ export default function EditorPage() {
           }),
         };
       });
+    } else if (event.type === 'note_added' && event.job_id === jobId) {
+      // Комментарий к сегменту — вплываем в панель активного сегмента
+      const sid = event.segment_id as number;
+      const body = event.body as string;
+      const user = event.user as string;
+      setNotedIds((prev) => new Set(prev).add(sid));
+      if (activeRef.current?.id === sid) {
+        setNotes((prev) => [...prev, {
+          id: -Date.now(), segment_id: sid, position: (event.position as number) ?? 0,
+          author: { id: -1, username: user }, body, created_at: new Date().toISOString(),
+        }]);
+      }
     } else if (event.type.startsWith('job_')) {
       void load();
     }
@@ -360,6 +424,18 @@ export default function EditorPage() {
     }
   };
 
+  const addNote = async () => {
+    if (!active || !noteText.trim()) return;
+    try {
+      const created = await api.addSegmentNote(active.id, noteText.trim());
+      setNotes((prev) => [...prev, created]);
+      setNotedIds((prev) => new Set(prev).add(active.id));
+      setNoteText('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add note');
+    }
+  };
+
   const doSubmit = async () => {
     try {
       await api.submitJob(job.id);
@@ -456,6 +532,9 @@ export default function EditorPage() {
               </span>
               <span className="seg-badges">
                 {seg.is_mandatory && <span className="status-chip st-new">mand.</span>}
+                {notedIds.has(seg.id) && (
+                  <span className="status-chip st-drafted note-chip" title="Has comments">💬</span>
+                )}
                 {seg.confirmed
                   ? <span className="status-chip st-translated">confirmed</span>
                   : <span className={`status-chip st-${seg.translation_status}`}>{seg.translation_status}</span>}
@@ -475,7 +554,7 @@ export default function EditorPage() {
 
               <div className="context-block muted small-text">
                 {contextPrev && <div className="context-line">&lt; {contextPrev.source_text}</div>}
-                <div className="context-line current">{active.source_text}</div>
+                <div className="context-line current">{renderSourceWithTerms(active.source_text, tbHits)}</div>
                 {contextNext && <div className="context-line">&gt; {contextNext.source_text}</div>}
               </div>
 
@@ -507,6 +586,7 @@ export default function EditorPage() {
 
               {tbHits.length > 0 && (
                 <div className="tb-list">
+                  <div className="muted small-text tb-hint">Terms found in this segment (highlighted in the source):</div>
                   {tbHits.map((h, i) => (
                     <div key={i} className={`tb-item ${h.status === 'forbidden' ? 'tb-forbidden' : ''}`}>
                       <strong>{h.term}</strong> → {h.translation}
@@ -522,6 +602,36 @@ export default function EditorPage() {
                   ))}
                 </div>
               )}
+
+              <div className="notes-panel">
+                <div className="row" style={{ alignItems: 'baseline' }}>
+                  <span className="muted small-text">Comments ({notes.length}) — обсуждение сегмента:</span>
+                </div>
+                {notes.map((n) => (
+                  <div key={n.id} className={`note-item ${n.author.username === (user?.username ?? '') ? 'mine' : ''}`}>
+                    <span className="note-meta">
+                      <strong>{n.author.username}</strong>
+                      <span className="muted"> · {fmtNoteTime(n.created_at)}</span>
+                    </span>
+                    <div className="note-body">{n.body}</div>
+                  </div>
+                ))}
+                {notes.length === 0 && (
+                  <div className="muted small-text">No comments yet. Ask about ambiguity, trademarks, context…</div>
+                )}
+                <div className="row" style={{ marginTop: 6 }}>
+                  <input
+                    placeholder="Add a comment for this segment…"
+                    value={noteText}
+                    onChange={(e) => setNoteText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') void addNote(); }}
+                    style={{ flex: 1 }}
+                  />
+                  <button className="btn small" disabled={!noteText.trim()} onClick={() => void addNote()}>
+                    Add
+                  </button>
+                </div>
+              </div>
 
               {canEdit ? (
                 <>

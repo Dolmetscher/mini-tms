@@ -268,7 +268,65 @@ class PreTranslateResult(BaseModel):
     skipped: int
 
 
-# --- TM / TB ---
+# --- LQA (оценка качества) и комментарии к сегментам ---
+
+LQACategory = Literal["accuracy", "terminology", "fluency", "style", "locale", "consistency"]
+LQASeverity = Literal["minor", "major", "critical"]
+
+
+class LQAErrorCreate(BaseModel):
+    segment_id: int
+    category: LQACategory
+    severity: LQASeverity
+    comment: str = Field(min_length=1, max_length=2000)
+
+
+class LQAErrorOut(BaseModel):
+    id: int
+    job_id: int
+    segment_id: int
+    position: int
+    category: str
+    severity: str
+    penalty: float
+    comment: str
+    author: UserRef
+    created_at: datetime
+
+
+class LQACategoryStat(BaseModel):
+    category: str
+    label: str
+    count: int
+    penalty: float
+
+
+class LQAReport(BaseModel):
+    job_id: int
+    words: int
+    errors: list[LQAErrorOut]
+    error_count: int
+    penalty_points: float
+    score: float
+    pass_score: float
+    passed: bool
+    by_category: list[LQACategoryStat]
+
+
+class SegmentNoteCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=2000)
+
+
+class SegmentNoteOut(BaseModel):
+    id: int
+    segment_id: int
+    position: int
+    author: UserRef
+    body: str
+    created_at: datetime
+
+
+# --- TM / TB resources ---
 
 
 class TMCreate(BaseModel):

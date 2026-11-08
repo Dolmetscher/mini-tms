@@ -62,3 +62,18 @@
   завершения (`completed`) задания.
 - Критические ошибки тегов (`tag_error`) блокируют сдачу; предупреждения
   (`number_mismatch`, `terminology`) — нет.
+
+## Обмен ресурсами: TMX, TBX, CSV
+
+- **TMX 1.4b** (экспорт/импорт TM): `<tu>` → `<tuv xml:lang>`; round-trip
+  без потерь проверяется тестами.
+- **TBX-Basic / LISA TBX 1.0** (экспорт/импорт TB): `martif → text → body →
+  termEntry → langSet(xml:lang) → tig → term`. Статус термина —
+  `<termNote type="normativeAuthorization">` (`preferredTerm` / `admittedTerm`
+  / `forbiddenTerm`), примечание — `<descrip type="note">` на уровне
+  termEntry. Импорт дополнительно принимает короткие статусы
+  (`preferred`/…), примечание в `termNote type="note"` и языки с региональными
+  суффиксами (`en` в TB матчит `en-US` в `xml:lang`). Round-trip без потерь
+  проверяется тестами (`test_review.py`).
+- **CSV** (TB): заголовок `term,translation,note,status`, UTF-8 с BOM для
+  Excel; полный round-trip с импортом.

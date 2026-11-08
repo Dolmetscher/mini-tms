@@ -37,3 +37,16 @@ MT_TIMEOUT_SECONDS = int(os.environ.get("TMS_MT_TIMEOUT", "10"))
 # Напоминалки о дедлайне (§8): по умолчанию за 24 и за 2 часа.
 REMINDER_OFFSETS_HOURS = (24, 2)
 REMINDER_CHECK_SECONDS = 60
+
+# LQA-скоринг (оценка качества перевода ревьюером): штрафные баллы за ошибку
+# и порог приемки. Практика LQA-методологий (memoQ LQA / MQM): minor — мелкие
+# стилистические шероховатости, major — заметные ошибки, critical — искажение
+# смысла/ Unsafe-ошибки. Оценка снижается на штраф×1000/слов, «зачет» — от порога.
+LQA_PENALTY = {  # severity -> штрафные баллы
+    "minor": float(os.environ.get("TMS_LQA_PENALTY_MINOR", "1")),
+    "major": float(os.environ.get("TMS_LQA_PENALTY_MAJOR", "5")),
+    "critical": float(os.environ.get("TMS_LQA_PENALTY_CRITICAL", "10")),
+}
+LQA_PASS_SCORE = float(os.environ.get("TMS_LQA_PASS_SCORE", "95.0"))
+LQA_CATEGORIES = ("accuracy", "terminology", "fluency", "style", "locale", "consistency")
+LQA_SEVERITIES = ("minor", "major", "critical")

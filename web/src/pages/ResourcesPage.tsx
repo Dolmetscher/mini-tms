@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, downloadTbExport, downloadTmExport } from '../api/client';
+import { api, downloadTbExport, downloadTbExportTbx, downloadTmExport } from '../api/client';
 import type { TBEntry, TBInfo, TMEntry, TMInfo } from '../api/types';
 
 type Tab = 'tm' | 'tb';
@@ -63,6 +63,10 @@ export default function ResourcesPage() {
 
   const exportTb = (tbId: number) => {
     void act(async () => downloadTbExport(tbId));
+  };
+
+  const exportTbTbx = (tbId: number) => {
+    void act(async () => downloadTbExportTbx(tbId));
   };
 
   return (
@@ -163,9 +167,22 @@ export default function ResourcesPage() {
                            if (e.target) e.target.value = '';
                          }} />
                 </label>
+                <label className="btn small" style={{ cursor: 'pointer' }}>
+                  Import TBX…
+                  <input type="file" accept=".tbx,.xml" hidden
+                         onChange={(e) => {
+                           const f = e.target.files?.[0];
+                           if (f && selectedTb) void act(() => api.importTBX(selectedTb, f));
+                           if (e.target) e.target.value = '';
+                         }} />
+                </label>
                 <button className="btn small" onClick={() => exportTb(selectedTb)}
                         title="Экспорт в CSV (term,translation,note,status) — тот же шаблон, что и импорт">
                   Export CSV
+                </button>
+                <button className="btn small" onClick={() => exportTbTbx(selectedTb)}
+                        title="Экспорт в TBX-Basic (LISA) — индустриальный стандарт обмена терминологией">
+                  Export TBX
                 </button>
               </>
             )}

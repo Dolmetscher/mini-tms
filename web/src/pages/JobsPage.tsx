@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { api, downloadJobExport } from '../api/client';
-import type { Job, WsEvent } from '../api/types';
+import type { Job, JobDetail, LQAReport, WsEvent } from '../api/types';
 import { useAuth } from '../state/AuthContext';
 import { useUpdates } from '../ws/useUpdates';
 
@@ -10,6 +10,20 @@ const STATUS_LABELS: Record<string, string> = {
   accepted: 'accepted', in_progress: 'in progress', submitted: 'submitted',
   rework: 'rework', completed: 'completed', canceled: 'canceled',
 };
+
+const LQA_CATEGORIES: { value: string; label: string }[] = [
+  { value: 'accuracy', label: 'Accuracy — смысл' },
+  { value: 'terminology', label: 'Terminology — термины' },
+  { value: 'fluency', label: 'Fluency — грамотность' },
+  { value: 'style', label: 'Style — стиль' },
+  { value: 'locale', label: 'Locale — локализация' },
+  { value: 'consistency', label: 'Consistency — согласованность' },
+];
+const LQA_SEVERITIES: { value: string; label: string; penalty: number }[] = [
+  { value: 'minor', label: 'Minor', penalty: 1 },
+  { value: 'major', label: 'Major', penalty: 5 },
+  { value: 'critical', label: 'Critical', penalty: 10 },
+];
 
 function fmtDeadline(value: string | null): string {
   if (!value) return '—';
@@ -26,6 +40,16 @@ export default function JobsPage() {
   const [mineOnly, setMineOnly] = useState(activeOrg?.role === 'translator');
   const [declining, setDeclining] = useState<number | null>(null);
   const [declineReason, setDeclineReason] = useState('');
+  // LQA-ревью: задание, отчет, детали (сегменты для выбора) и форма разметки
+  const [lqaJob, setLqaJob] = useState<Job | null>(null);
+  const [lqaDetail, setLqaDetail] = useState<JobDetail | null>(null);
+  const [lqaReport, setLqaReport] = useState<LQAReport | null>(null);
+  const [lqaError, setLqaError] = useState('');
+  const [lqaBusy, setLqaBusy] = useState(false);
+  const [lqaSegment, setLqaSegment] = useState<number | null>(null);
+  const [lqaCategory, setLqaCategory] = useState('accuracy');
+  const [lqaSeverity, setLqaSeverity] = useState('minor');
+  const [lqaComment, setLqaComment] = useState('');
 
   const load = useCallback(() => {
     api
@@ -40,7 +64,55 @@ export default function JobsPage() {
 
   useUpdates((event: WsEvent) => {
     if (event.type.startsWith('job_') || event.type === 'segment_updated') load();
+    // Разметка LQA обновляется в открытом ревью без переоткрытия
+    if ((event.type === 'lqa_error_added' || event.type === 'lqa_error_deleted')
+      && lqaJob && event.job_id === lqaJob.id) {
+      api.jobLqa(lqaJob.id).then(setLqaReport).catch(() => undefined);
+    }
   });
+
+  const openLqa = useCallback(async (job: Job) => {
+    setLqaJob(job);
+    setLqaError('');
+    setLqaReport(null);
+    setLqaDetail(null);
+    setLqaSegment(null);
+    setLqaComment('');
+    try {
+      const [report, detail] = await Promise.all([api.jobLqa(job.id), api.job(job.id)]);
+      setLqaReport(report);
+      setLqaDetail(detail);
+      if (detail.segments.length) setLqaSegment(detail.segments[0].id);
+    } catch (err) {
+      setLqaError(err instanceof Error ? err.message : 'Failed to load LQA report');
+    }
+  }, []);
+
+  const addLqaError = async () => {
+    if (!lqaJob || !lqaSegment || !lqaComment.trim()) return;
+    setLqaBusy(true);
+    try {
+      await api.addLqaError(lqaJob.id, {
+        segment_id: lqaSegment, category: lqaCategory, severity: lqaSeverity, comment: lqaComment.trim(),
+      });
+      setLqaComment('');
+      setLqaReport(await api.jobLqa(lqaJob.id));
+    } catch (err) {
+      setLqaError(err instanceof Error ? err.message : 'Failed to mark error');
+    } finally {
+      setLqaBusy(false);
+    }
+  };
+
+  const removeLqaError = async (errorId: number) => {
+    if (!lqaJob) return;
+    try {
+      await api.deleteLqaError(lqaJob.id, errorId);
+      setLqaReport(await api.jobLqa(lqaJob.id));
+    } catch (err) {
+      setLqaError(err instanceof Error ? err.message : 'Failed to remove error');
+    }
+  };
 
   if (!token) return <Navigate to="/login" replace />;
 
@@ -142,6 +214,12 @@ export default function JobsPage() {
                     {isManager && (job.status === 'submitted' || job.status === 'completed') && (
                       <button className="btn small" onClick={() => act(() => downloadJobExport(job.id))}>Download</button>
                     )}
+                    {isManager && ['submitted', 'rework', 'completed'].includes(job.status) && (
+                      <button className="btn small" onClick={() => void openLqa(job)}
+                              title="Оценка качества перевода: разметка ошибок и LQA-скор">
+                        LQA review
+                      </button>
+                    )}
                     {isManager && <Link className="btn small" to={`/projects/${job.project_id}`}>Dashboard</Link>}
                   </td>
                 </tr>
@@ -153,6 +231,100 @@ export default function JobsPage() {
           </tbody>
         </table>
       </section>
+      {lqaJob && (
+        <div className="modal-backdrop" onClick={() => setLqaJob(null)}>
+          <div className="modal card lqa-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="panel-title">LQA — оценка качества: {lqaJob.document_name}</h3>
+            {lqaError && <div className="alert">{lqaError}</div>}
+            {!lqaReport && <div className="muted">Loading…</div>}
+            {lqaReport && (
+              <>
+                <div className="lqa-score-row">
+                  <div className={`lqa-score ${lqaReport.passed ? 'passed' : 'failed'}`}>
+                    <span className="lqa-score-value">{lqaReport.score.toFixed(1)}</span>
+                    <span className="lqa-score-max">/ 100</span>
+                  </div>
+                  <div className="lqa-score-meta">
+                    <span className={`status-chip ${lqaReport.passed ? 'st-translated' : 'st-new'}`}>
+                      {lqaReport.passed ? 'PASS' : 'FAIL'} (порог {lqaReport.pass_score})
+                    </span>
+                    <span className="muted small-text">
+                      {lqaReport.error_count} ошибок · {lqaReport.penalty_points} штрафных баллов · {lqaReport.words} слов ·
+                      score = 100 − penalty×1000/words
+                    </span>
+                  </div>
+                </div>
+
+                {lqaReport.by_category.length > 0 && (
+                  <div className="lqa-cats">
+                    {lqaReport.by_category.map((c) => (
+                      <span key={c.category} className="lqa-cat-chip">
+                        {c.label}: {c.count} ({c.penalty} б.)
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div className="qa-list">
+                  {lqaReport.errors.map((e) => (
+                    <div key={e.id} className={`qa-item ${e.severity === 'critical' ? 'error' : e.severity === 'major' ? 'warning' : ''}`}>
+                      <span className="muted">#{e.position + 1}</span>
+                      <span className={`status-chip sev-${e.severity}`}>{e.severity} · {e.penalty} б.</span>
+                      <span className={`status-chip st-drafted`}>{e.category}</span>
+                      <span className="lqa-comment">{e.comment}</span>
+                      <span className="muted small-text">{e.author.username}</span>
+                      <button className="btn small" title="Снять ошибку (разметка ошибочна)"
+                              onClick={() => void removeLqaError(e.id)}>×</button>
+                    </div>
+                  ))}
+                  {lqaReport.errors.length === 0 && (
+                    <div className="muted">Ошибок не размечено. Отметьте замечания по сегментам ниже.</div>
+                  )}
+                </div>
+
+                {lqaDetail && lqaDetail.segments.length > 0 && (
+                  <div className="lqa-add-form">
+                    <div className="muted small-text">Разметить ошибку:</div>
+                    <div className="row wrap" style={{ gap: 6 }}>
+                      <select value={lqaSegment ?? ''} onChange={(e) => setLqaSegment(Number(e.target.value) || null)}
+                              style={{ maxWidth: 220 }}>
+                        {lqaDetail.segments.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            #{s.position + 1}: {s.source_text.slice(0, 40)}{s.source_text.length > 40 ? '…' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <select value={lqaCategory} onChange={(e) => setLqaCategory(e.target.value)}>
+                        {LQA_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                      </select>
+                      <select value={lqaSeverity} onChange={(e) => setLqaSeverity(e.target.value)}>
+                        {LQA_SEVERITIES.map((s) => (
+                          <option key={s.value} value={s.value}>{s.label} (+{s.penalty} б.)</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="row" style={{ marginTop: 6 }}>
+                      <input
+                        placeholder="Что именно не так (комментарий ревьюера)…"
+                        value={lqaComment}
+                        onChange={(e) => setLqaComment(e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                      <button className="btn primary" disabled={!lqaSegment || !lqaComment.trim() || lqaBusy}
+                              onClick={() => void addLqaError()}>
+                        {lqaBusy ? '…' : 'Mark error'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+            <div className="row" style={{ marginTop: 10 }}>
+              <button className="btn" onClick={() => setLqaJob(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

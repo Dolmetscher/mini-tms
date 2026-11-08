@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..deps import Context, get_context
+from ..formats import tbx_io
 from ..helpers import can_manage, content_disposition
 from ..services import audit
 
@@ -142,6 +143,50 @@ def export_csv(tb_id: int, ctx: Context = Depends(get_context)):
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": content_disposition(f"{safe_name}.csv")},
     )
+
+
+@router.get("/tbs/{tb_id}/export-tbx")
+def export_tbx(tb_id: int, ctx: Context = Depends(get_context)):
+    """Экспорт TB в TBX-Basic (LISA TBX 1.0) — индустриальный стандарт обмена
+    терминологией: matif/langSet/tig, статус — normativeAuthorization.
+    """
+    ctx.require_role("admin", "pm")
+    tb = _tb_or_404(ctx, tb_id)
+    entries = (
+        ctx.db.query(models.TBEntry)
+        .filter(models.TBEntry.tb_id == tb.id)
+        .order_by(models.TBEntry.id)
+        .all()
+    )
+    payload = tbx_io.export_tbx(tb.name, tb.source_lang, tb.target_lang, entries)
+    safe_name = tb.name.replace('"', "")
+    audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tb.export_tbx", "tb", tb.id, {"entries": len(entries)})
+    ctx.db.commit()
+    return Response(
+        content=payload,
+        media_type="application/x-tbx+xml",
+        headers={"Content-Disposition": content_disposition(f"{safe_name}.tbx")},
+    )
+
+
+@router.post("/tbs/{tb_id}/import-tbx", status_code=status.HTTP_200_OK)
+def import_tbx(tb_id: int, file: UploadFile = File(...), ctx: Context = Depends(get_context)):
+    """Импорт TBX (termEntry → langSet/xml:lang → tig/term). Языки матчатся по
+    префиксу (en ↔ en-US); статус — termNote normativeAuthorization, примечание —
+    descrip type=note. Дубликаты не контролируем (как и в CSV-импорте).
+    """
+    ctx.require_role("admin", "pm")
+    tb = _tb_or_404(ctx, tb_id)
+    raw = file.file.read()
+    try:
+        rows = tbx_io.parse_tbx(raw, tb.source_lang, tb.target_lang)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    for row in rows:
+        ctx.db.add(models.TBEntry(tb_id=tb.id, **row))
+    audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tb.import_tbx", "tb", tb.id, {"added": len(rows)})
+    ctx.db.commit()
+    return {"added": len(rows)}
 
 
 @router.delete("/tbs/{tb_id}", status_code=status.HTTP_204_NO_CONTENT)

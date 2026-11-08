@@ -1,7 +1,7 @@
 import type {
-  AnalysisReport, AppNotification, DocumentInfo, Job, JobDetail, LoginResponse, Member,
-  MTSuggestion, PreTranslateResult, Project, QAReport, Resource, Segment, TBEntry, TBHit,
-  TBInfo, TMEntry, TMInfo, TMSuggestion, User,
+  AnalysisReport, AppNotification, DocumentInfo, Job, JobDetail, LQAError, LQAReport, LoginResponse,
+  Member, MTSuggestion, PreTranslateResult, Project, QAReport, Resource, Segment, SegmentNote,
+  TBEntry, TBHit, TBInfo, TMEntry, TMInfo, TMSuggestion, User,
 } from './types';
 
 let API_BASE =
@@ -97,6 +97,10 @@ export async function downloadTmExport(tmId: number): Promise<void> {
 
 export async function downloadTbExport(tbId: number): Promise<void> {
   return downloadFile(`/api/tb/tbs/${tbId}/export`, `tb-${tbId}.csv`);
+}
+
+export async function downloadTbExportTbx(tbId: number): Promise<void> {
+  return downloadFile(`/api/tb/tbs/${tbId}/export-tbx`, `tb-${tbId}.tbx`);
 }
 
 export async function downloadBilingualExport(jobId: number): Promise<void> {
@@ -211,6 +215,16 @@ export const api = {
   mtSuggest: (jobId: number, segmentId: number) =>
     request<MTSuggestion>(`/api/jobs/${jobId}/segments/${segmentId}/mt`),
 
+  // LQA (оценка качества) и комментарии к сегментам
+  jobLqa: (id: number) => request<LQAReport>(`/api/jobs/${id}/lqa`),
+  addLqaError: (jobId: number, body: { segment_id: number; category: string; severity: string; comment: string }) =>
+    request<LQAError>(`/api/jobs/${jobId}/lqa`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteLqaError: (jobId: number, errorId: number) =>
+    request<void>(`/api/jobs/${jobId}/lqa/${errorId}`, { method: 'DELETE' }),
+  segmentNotes: (segmentId: number) => request<SegmentNote[]>(`/api/segments/${segmentId}/notes`),
+  addSegmentNote: (segmentId: number, body: string) =>
+    request<SegmentNote>(`/api/segments/${segmentId}/notes`, { method: 'POST', body: JSON.stringify({ body }) }),
+
   // TM / TB
   tms: () => request<TMInfo[]>('/api/tm/tms'),
   createTM: (body: { name: string; source_lang: string; target_lang: string }) =>
@@ -235,6 +249,11 @@ export const api = {
     const fd = new FormData();
     fd.append('file', file);
     return request<{ added: number; skipped: number }>(`/api/tb/tbs/${tbId}/import-csv`, { method: 'POST', body: fd });
+  },
+  importTBX: (tbId: number, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return request<{ added: number }>(`/api/tb/tbs/${tbId}/import-tbx`, { method: 'POST', body: fd });
   },
 
   // org
