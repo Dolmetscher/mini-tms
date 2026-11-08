@@ -196,3 +196,58 @@ def delete_tb(tb_id: int, ctx: Context = Depends(get_context)):
     ctx.db.delete(tb)
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tb.delete", "tb", tb_id, {"name": tb.name})
     ctx.db.commit()
+
+
+@router.patch("/tbs/{tb_id}/entries/{entry_id}", response_model=schemas.TBEntryOut)
+def update_entry(
+    tb_id: int, entry_id: int, body: schemas.TBEntryUpdate, ctx: Context = Depends(get_context)
+):
+    """Правка термина (maintenance, pm/admin): перевод, примечание, статус.
+
+    Смена термина допускается, но не должна создавать дубль: term в базе —
+    содержательный ключ поиска (QA и подсветка ищут по нему).
+    """
+    ctx.require_role("admin", "pm")
+    tb = _tb_or_404(ctx, tb_id)
+    entry = ctx.db.get(models.TBEntry, entry_id)
+    if entry is None or entry.tb_id != tb.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Term entry not found")
+    if body.term is not None and body.term != entry.term:
+        duplicate = (
+            ctx.db.query(models.TBEntry)
+            .filter(models.TBEntry.tb_id == tb.id, models.TBEntry.term == body.term)
+            .first()
+        )
+        if duplicate is not None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail=f"Term '{body.term}' already exists in this termbase",
+            )
+        entry.term = body.term
+    if body.translation is not None:
+        entry.translation = body.translation
+    if body.note is not None:
+        entry.note = body.note
+    if body.status is not None:
+        entry.status = body.status
+    audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tb.entry_update", "tb_entry", entry.id,
+                body.model_dump(exclude_unset=True))
+    ctx.db.commit()
+    ctx.db.refresh(entry)
+    return entry
+
+
+@router.delete("/tbs/{tb_id}/entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_entry(tb_id: int, entry_id: int, ctx: Context = Depends(get_context)):
+    """Удаление термина: например, термин выведен из употребления."""
+    ctx.require_role("admin", "pm")
+    tb = _tb_or_404(ctx, tb_id)
+    entry = ctx.db.get(models.TBEntry, entry_id)
+    if entry is None or entry.tb_id != tb.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Term entry not found")
+    ctx.db.delete(entry)
+    audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tb.entry_delete", "tb_entry", entry_id, {
+        "tb_id": tb.id,
+    })
+    ctx.db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

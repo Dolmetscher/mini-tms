@@ -2,7 +2,7 @@ import os
 import re
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from .. import config, models, schemas
@@ -10,8 +10,8 @@ from ..database import SessionLocal
 from ..deps import Context, get_context
 from ..fuzzy import length_bound_ratio, normalize, similarity_ratio
 from ..formats import segmentation
-from ..helpers import can_manage, ensure_project_access, naive_utc, project_or_404, utcnow
-from ..services import audit, words
+from ..helpers import can_manage, content_disposition, ensure_project_access, naive_utc, project_or_404, utcnow
+from ..services import audit, delivery, words
 
 router = APIRouter(prefix="/api", tags=["projects"])
 
@@ -378,3 +378,32 @@ def tb_lookup(
                     note=entry.note, status=entry.status, tb_name=tb.name,
                 ))
     return hits
+
+
+@router.get("/projects/{project_id}/deliver")
+def deliver_project(project_id: int, ctx: Context = Depends(get_context)):
+    """Пакет доставки проекта (pm/admin): все сданные целевые файлы одним ZIP.
+
+    Практика закрытия цикла: после сдачи/приемки заданий менеджер забирает
+    готовые переводы одним архивом (аналог «delivery package» XTRF/Plunet),
+    с манифестом — что внутри и в каком статусе.
+    """
+    ctx.require_role("admin", "pm")
+    project = project_or_404(ctx, project_id)
+    jobs = delivery.deliverable_jobs(ctx.db, project)
+    if not jobs:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="No submitted jobs to deliver yet",
+        )
+    payload = delivery.build_delivery_zip(jobs)
+    audit.audit(ctx.db, ctx.org_id, ctx.user_id, "project.deliver", "project", project.id, {
+        "jobs": len(jobs),
+    })
+    ctx.db.commit()
+    safe_name = re.sub(r'["\\/:*?<>|]', "_", project.name)
+    return Response(
+        content=payload,
+        media_type="application/zip",
+        headers={"Content-Disposition": content_disposition(f"{safe_name}_delivery.zip")},
+    )

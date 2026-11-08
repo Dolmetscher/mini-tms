@@ -22,6 +22,19 @@ export default function Header() {
     if (event.type === 'notification') refreshUnread();
   });
 
+  const changePassword = async () => {
+    const current = window.prompt('Current password:');
+    if (!current) return;
+    const next = window.prompt('New password (min 4 chars, must differ):');
+    if (!next) return;
+    try {
+      await api.changePassword(current, next);
+      window.alert('Password updated.');
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Password change failed');
+    }
+  };
+
   return (
     <header className="topbar">
       <Link to="/jobs" className="brand">Mini&#8209;TMS</Link>
@@ -54,6 +67,7 @@ export default function Header() {
       )}
       <span className={`role-badge role-${activeOrg?.role}`}>{activeOrg?.role}</span>
       <span className="muted">{user?.username}</span>
+      <button className="btn small" title="Change your password" onClick={() => void changePassword()}>Password</button>
       <button className="btn small" onClick={logout}>Log out</button>
     </header>
   );

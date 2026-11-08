@@ -190,3 +190,66 @@ def export_job_quote(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": content_disposition(filename)},
     )
+
+
+@router.get("/projects/{project_id}/invoice", response_model=schemas.ProjectInvoice)
+def get_project_invoice(
+    project_id: int,
+    rate_card_id: int | None = None,
+    ctx: Context = Depends(get_context),
+):
+    """Инвойс проекта: та же математика, что в котировке, но только сданные задания.
+
+    Данные менеджмента (pm/admin). 409, если сданных заданий нет совсем;
+    задания без прайс-листа отражаются в missing_pairs.
+    """
+    ctx.require_role("admin", "pm")
+    project = project_or_404(ctx, project_id)
+    has_submitted = (
+        ctx.db.query(models.Job.id)
+        .filter(
+            models.Job.project_id == project.id,
+            models.Job.status.in_(("submitted", "completed")),
+        )
+        .first()
+        is not None
+    )
+    if not has_submitted:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="No submitted jobs to invoice yet",
+        )
+    return schemas.ProjectInvoice(**quotes.project_invoice(ctx.db, project, rate_card_id))
+
+
+@router.get("/projects/{project_id}/invoice/export")
+def export_project_invoice(
+    project_id: int,
+    rate_card_id: int | None = None,
+    ctx: Context = Depends(get_context),
+):
+    """Инвойс в DOCX — закрывающий документ для заказчика (pm/admin)."""
+    ctx.require_role("admin", "pm")
+    project = project_or_404(ctx, project_id)
+    invoice = quotes.project_invoice(ctx.db, project, rate_card_id)
+    if not invoice["jobs"] and not invoice["missing_pairs"]:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="No submitted jobs to invoice yet",
+        )
+    if not invoice["jobs"]:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"No rate card for language pairs: {', '.join(invoice['missing_pairs'])}",
+        )
+    audit.audit(ctx.db, ctx.org_id, ctx.user_id, "project.invoice_export", "project", project.id, {
+        "invoice_no": invoice["invoice_no"],
+        "totals": invoice["totals"],
+    })
+    ctx.db.commit()
+    payload = docx_io.render_invoice(invoice, project.source_lang)
+    return Response(
+        content=payload,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": content_disposition(f"{invoice['invoice_no']}.docx")},
+    )

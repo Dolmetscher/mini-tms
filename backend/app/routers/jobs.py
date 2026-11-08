@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..deps import Context, get_context
-from ..formats import docx_io, segmentation
+from ..formats import docx_io
 from ..helpers import (
     can_manage,
     content_disposition,
@@ -17,7 +17,7 @@ from ..helpers import (
     org_member_ids,
     serialize_job,
 )
-from ..services import audit, lqa, leveraging, notify, qa
+from ..services import audit, delivery, lqa, leveraging, notify, qa
 from ..services.mt import MTError, get_provider
 from ..ws import make_event, manager
 
@@ -554,16 +554,7 @@ def export_job(job_id: int, ctx: Context = Depends(get_context)):
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Export is available after submission")
     if job.document.processing_status != "ready":
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Document is not processed yet")
-    if not job.document.storage_path:
-        targets = [segment.target_text for segment in job.segments]
-        exported = ("\n".join(targets) + "\n").encode("utf-8")
-        fmt = job.document.format
-    else:
-        with open(job.document.storage_path, "rb") as fh:
-            original = fh.read()
-        targets = [segment.target_text for segment in job.segments]
-        exported = segmentation.export_file(job.document.format, original, targets)
-        fmt = job.document.format
+    exported, fmt = delivery.export_target_bytes(job)
     base, _ = os.path.splitext(job.document.name)
     filename = f"{base}_{job.target_lang}.{fmt}"
     media_types = {

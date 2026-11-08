@@ -1,6 +1,6 @@
 import { ChangeEvent, useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { api, downloadJobExport, downloadJobQuoteExport, getActiveOrg } from '../api/client';
+import { api, downloadJobExport, downloadJobQuoteExport, downloadProjectDelivery, downloadProjectInvoice, getActiveOrg } from '../api/client';
 import type { DocumentInfo, Job, Member, Project, ProjectQuote, RateCard, Resource, TMInfo, TBInfo } from '../api/types';
 import { useUpdates } from '../ws/useUpdates';
 
@@ -96,6 +96,7 @@ export default function ProjectDashboardPage() {
   };
 
   const translators = members.filter((m) => m.role === 'translator');
+  const deliverableCount = jobs.filter((j) => ['submitted', 'completed'].includes(j.status)).length;
 
   if (!project) return <div className="muted center">{error || 'Loading…'}</div>;
 
@@ -194,6 +195,32 @@ export default function ProjectDashboardPage() {
             </div>
           </>
         )}
+      </section>
+
+      <section className="card">
+        <h3 className="panel-title">Delivery</h3>
+        <p className="muted small-text">
+          Closing the loop: once jobs are submitted, download every target file as a single ZIP
+          (with a manifest), and issue the invoice DOCX — billed work only, same math as the quote.
+        </p>
+        <div className="row wrap">
+          <button
+            className="btn small primary"
+            disabled={deliverableCount === 0}
+            title={deliverableCount ? `${deliverableCount} submitted/completed job(s)` : 'Nothing submitted yet'}
+            onClick={() => downloadProjectDelivery(projectId).catch((e: Error) => setError(e.message))}
+          >
+            Delivery ZIP ({deliverableCount})
+          </button>
+          <button
+            className="btn small"
+            disabled={deliverableCount === 0}
+            onClick={() => downloadProjectInvoice(projectId, quoteCard ? Number(quoteCard) : undefined)
+              .catch((e: Error) => setError(e.message))}
+          >
+            Invoice DOCX
+          </button>
+        </div>
       </section>
 
       <section className="card">

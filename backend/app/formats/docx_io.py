@@ -113,3 +113,39 @@ def render_quote(quote: dict, source_lang: str) -> bytes:
     buffer = io.BytesIO()
     doc.save(buffer)
     return buffer.getvalue()
+
+
+def render_invoice(invoice: dict, source_lang: str) -> bytes:
+    """Инвойс проекта в DOCX — закрывающий документ для заказчика.
+
+    Строки — по заданиям (документ, язык, прайс-лист, сумма); заказчику
+    важна итоговая строка, категории котировки не разворачиваются. Итоги —
+    по валютам, как в котировке проекта.
+    """
+    doc = open_docx()
+    doc.add_heading("Invoice", level=1)
+    doc.add_paragraph(f"Invoice no.: {invoice['invoice_no']}")
+    doc.add_paragraph(f"Issue date: {invoice['issued_on']}")
+    doc.add_paragraph(f"Project: {invoice['project_name']}")
+    doc.add_paragraph(f"Source language: {source_lang}")
+
+    table = doc.add_table(rows=1, cols=4)
+    table.style = "Table Grid"
+    header = table.rows[0].cells
+    header[0].text = "Document"
+    header[1].text = "Target language"
+    header[2].text = "Rate card"
+    header[3].text = "Amount"
+    for job in invoice["jobs"]:
+        cells = table.add_row().cells
+        cells[0].text = job["document_name"]
+        cells[1].text = job["target_lang"]
+        cells[2].text = job["rate_card"]
+        cells[3].text = f"{job['total']:.2f} {job['currency']}"
+    for total in invoice["totals"]:
+        paragraph = doc.add_paragraph()
+        paragraph.add_run(f"Total due: {total['total']:.2f} {total['currency']}").bold = True
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()

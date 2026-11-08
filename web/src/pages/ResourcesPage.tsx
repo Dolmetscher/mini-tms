@@ -4,6 +4,9 @@ import type { TBEntry, TBInfo, TMEntry, TMInfo } from '../api/types';
 
 type Tab = 'tm' | 'tb';
 
+interface TmEdit { id: number; target: string; }
+interface TbEdit { id: number; term: string; translation: string; note: string; status: string; }
+
 export default function ResourcesPage() {
   const [tab, setTab] = useState<Tab>('tm');
   const [tms, setTms] = useState<TMInfo[]>([]);
@@ -13,6 +16,9 @@ export default function ResourcesPage() {
   const [tmEntries, setTmEntries] = useState<TMEntry[]>([]);
   const [tbEntries, setTbEntries] = useState<TBEntry[]>([]);
   const [error, setError] = useState('');
+  // правка записи в строке таблицы (maintenance)
+  const [editTm, setEditTm] = useState<TmEdit | null>(null);
+  const [editTb, setEditTb] = useState<TbEdit | null>(null);
   // формы
   const [tmName, setTmName] = useState('');
   const [tmSource, setTmSource] = useState('en');
@@ -57,6 +63,40 @@ export default function ResourcesPage() {
     }
   };
 
+  const saveTmEntry = () => {
+    if (!selectedTm || !editTm) return;
+    void act(async () => {
+      await api.updateTMEntry(selectedTm, editTm.id, editTm.target);
+      setEditTm(null);
+    });
+  };
+
+  const removeTmEntry = (entryId: number) => {
+    if (!selectedTm || !window.confirm('Delete this TM entry? It will stop showing as a suggestion.')) return;
+    void act(async () => {
+      await api.deleteTMEntry(selectedTm, entryId);
+      setEditTm(null);
+    });
+  };
+
+  const saveTbEntry = () => {
+    if (!selectedTb || !editTb) return;
+    void act(async () => {
+      await api.updateTBEntry(selectedTb, editTb.id, {
+        term: editTb.term, translation: editTb.translation, note: editTb.note, status: editTb.status,
+      });
+      setEditTb(null);
+    });
+  };
+
+  const removeTbEntry = (entryId: number) => {
+    if (!selectedTb || !window.confirm('Delete this term?')) return;
+    void act(async () => {
+      await api.deleteTBEntry(selectedTb, entryId);
+      setEditTb(null);
+    });
+  };
+
   const exportTm = (tmId: number) => {
     void act(async () => downloadTmExport(tmId));
   };
@@ -72,8 +112,8 @@ export default function ResourcesPage() {
   return (
     <>
       <section className="card row">
-        <button className={`btn small ${tab === 'tm' ? 'primary' : ''}`} onClick={() => setTab('tm')}>Translation memory</button>
-        <button className={`btn small ${tab === 'tb' ? 'primary' : ''}`} onClick={() => setTab('tb')}>Termbase</button>
+        <button className={`btn small ${tab === 'tm' ? 'primary' : ''}`} onClick={() => { setTab('tm'); setEditTm(null); setEditTb(null); }}>Translation memory</button>
+        <button className={`btn small ${tab === 'tb' ? 'primary' : ''}`} onClick={() => { setTab('tb'); setEditTm(null); setEditTb(null); }}>Termbase</button>
         <span className="spacer" />
         <input placeholder="Search entries…" value={search} onChange={(e) => setSearch(e.target.value)} />
       </section>
@@ -111,7 +151,7 @@ export default function ResourcesPage() {
           </section>
 
           <section className="card row wrap">
-            <select value={selectedTm ?? ''} onChange={(e) => setSelectedTm(Number(e.target.value) || null)}>
+            <select value={selectedTm ?? ''} onChange={(e) => { setSelectedTm(Number(e.target.value) || null); setEditTm(null); }}>
               <option value="">select TM…</option>
               {tms.map((t) => (
                 <option key={t.id} value={t.id}>{t.name} ({t.source_lang}→{t.target_lang}, {t.entry_count})</option>
@@ -132,12 +172,39 @@ export default function ResourcesPage() {
           {selectedTm !== null && (
             <section className="card">
               <table className="jobs-table">
-                <thead><tr><th>Source</th><th>Target</th></tr></thead>
+                <thead><tr><th>Source</th><th>Target</th><th></th></tr></thead>
                 <tbody>
                   {tmEntries.map((e) => (
-                    <tr key={e.id}><td>{e.source_text}</td><td>{e.target_text}</td></tr>
+                    <tr key={e.id}>
+                      <td>{e.source_text}</td>
+                      <td style={{ minWidth: 240 }}>
+                        {editTm?.id === e.id ? (
+                          <span className="row" style={{ gap: 6 }}>
+                            <input
+                              value={editTm.target}
+                              onChange={(ev) => setEditTm({ ...editTm, target: ev.target.value })}
+                              style={{ minWidth: 200 }}
+                            />
+                            <button className="btn small primary" disabled={!editTm.target.trim()} onClick={saveTmEntry}>Save</button>
+                            <button className="btn small" onClick={() => setEditTm(null)}>Cancel</button>
+                          </span>
+                        ) : e.target_text}
+                      </td>
+                      <td className="actions-cell">
+                        {editTm?.id !== e.id && (
+                          <span className="row" style={{ gap: 4 }}>
+                            <button
+                              className="btn small"
+                              title="Maintenance: fix the translation of this entry"
+                              onClick={() => setEditTm({ id: e.id, target: e.target_text })}
+                            >Edit</button>
+                            <button className="btn small" onClick={() => removeTmEntry(e.id)}>Delete</button>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
                   ))}
-                  {tmEntries.length === 0 && <tr><td colSpan={2} className="muted center">No entries.</td></tr>}
+                  {tmEntries.length === 0 && <tr><td colSpan={3} className="muted center">No entries.</td></tr>}
                 </tbody>
               </table>
             </section>
@@ -189,7 +256,7 @@ export default function ResourcesPage() {
           </section>
 
           <section className="card row wrap">
-            <select value={selectedTb ?? ''} onChange={(e) => setSelectedTb(Number(e.target.value) || null)}>
+            <select value={selectedTb ?? ''} onChange={(e) => { setSelectedTb(Number(e.target.value) || null); setEditTb(null); }}>
               <option value="">select TB…</option>
               {tbs.map((t) => (
                 <option key={t.id} value={t.id}>{t.name} ({t.source_lang}→{t.target_lang}, {t.entry_count})</option>
@@ -216,17 +283,54 @@ export default function ResourcesPage() {
           {selectedTb !== null && (
             <section className="card">
               <table className="jobs-table">
-                <thead><tr><th>Term</th><th>Translation</th><th>Status</th><th>Note</th></tr></thead>
+                <thead><tr><th>Term</th><th>Translation</th><th>Status</th><th>Note</th><th></th></tr></thead>
                 <tbody>
                   {tbEntries.map((e) => (
                     <tr key={e.id}>
-                      <td>{e.term}</td>
-                      <td className={e.status === 'forbidden' ? 'overdue' : ''}>{e.translation}</td>
-                      <td><span className={`status-chip ${e.status === 'forbidden' ? 'st-new' : 'st-translated'}`}>{e.status}</span></td>
-                      <td className="muted">{e.note}</td>
+                      <td style={{ minWidth: 140 }}>
+                        {editTb?.id === e.id
+                          ? <input value={editTb.term} onChange={(ev) => setEditTb({ ...editTb, term: ev.target.value })} style={{ width: 130 }} />
+                          : e.term}
+                      </td>
+                      <td className={e.status === 'forbidden' ? 'overdue' : ''} style={{ minWidth: 160 }}>
+                        {editTb?.id === e.id
+                          ? <input value={editTb.translation} onChange={(ev) => setEditTb({ ...editTb, translation: ev.target.value })} style={{ width: 150 }} />
+                          : e.translation}
+                      </td>
+                      <td>
+                        {editTb?.id === e.id ? (
+                          <select value={editTb.status} onChange={(ev) => setEditTb({ ...editTb, status: ev.target.value })}>
+                            <option value="preferred">preferred</option>
+                            <option value="admitted">admitted</option>
+                            <option value="forbidden">forbidden</option>
+                          </select>
+                        ) : (
+                          <span className={`status-chip ${e.status === 'forbidden' ? 'st-new' : 'st-translated'}`}>{e.status}</span>
+                        )}
+                      </td>
+                      <td className="muted" style={{ minWidth: 180 }}>
+                        {editTb?.id === e.id
+                          ? <input value={editTb.note} onChange={(ev) => setEditTb({ ...editTb, note: ev.target.value })} style={{ width: 170 }} />
+                          : e.note}
+                      </td>
+                      <td className="actions-cell">
+                        {editTb?.id === e.id ? (
+                          <span className="row" style={{ gap: 4 }}>
+                            <button className="btn small primary" disabled={!editTb.term.trim() || !editTb.translation.trim()} onClick={saveTbEntry}>Save</button>
+                            <button className="btn small" onClick={() => setEditTb(null)}>Cancel</button>
+                          </span>
+                        ) : (
+                          <span className="row" style={{ gap: 4 }}>
+                            <button className="btn small" onClick={() => setEditTb({
+                              id: e.id, term: e.term, translation: e.translation, note: e.note, status: e.status,
+                            })}>Edit</button>
+                            <button className="btn small" onClick={() => removeTbEntry(e.id)}>Delete</button>
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   ))}
-                  {tbEntries.length === 0 && <tr><td colSpan={4} className="muted center">No entries.</td></tr>}
+                  {tbEntries.length === 0 && <tr><td colSpan={5} className="muted center">No entries.</td></tr>}
                 </tbody>
               </table>
             </section>

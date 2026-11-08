@@ -24,6 +24,13 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class PasswordChange(BaseModel):
+    """Смена пароля: текущий обязателен (подтверждение владельца сессии)."""
+
+    current_password: str
+    new_password: str = Field(min_length=4)  # как при регистрации пользователя
+
+
 class UserOut(AuthoredModel):
     id: int
     username: str
@@ -356,6 +363,12 @@ class TMEntryUpsert(BaseModel):
     target_text: str = Field(min_length=1)
 
 
+class TMEntryUpdate(BaseModel):
+    """Правка записи TM: исходник — ключ памяти и не меняется (maintenance)."""
+
+    target_text: str = Field(min_length=1)
+
+
 class TMSuggestionOut(BaseModel):
     source_match: str
     target_suggestion: str
@@ -392,6 +405,15 @@ class TBEntryUpsert(BaseModel):
     translation: str = Field(min_length=1)
     note: str = ""
     status: TBStatus = "preferred"
+
+
+class TBEntryUpdate(BaseModel):
+    """Правка термина: все поля опциональны; смена термина проходит проверку на дубль."""
+
+    term: str | None = Field(default=None, min_length=1)
+    translation: str | None = Field(default=None, min_length=1)
+    note: str | None = None
+    status: TBStatus | None = None
 
 
 class TBHitOut(BaseModel):
@@ -473,6 +495,13 @@ class ProjectQuote(BaseModel):
     jobs: list[JobQuote]
     totals: list[dict]  # [{currency, total}] — по одной валюте на строку
     missing_pairs: list[str]  # языковые пары без прайс-листа
+
+
+class ProjectInvoice(ProjectQuote):
+    """Инвойс: котировка, ограниченная сданными (submitted/completed) заданиями."""
+
+    invoice_no: str  # INV-<проект>-<дата> — детерминированный номер
+    issued_on: str  # YYYY-MM-DD
 
 
 # --- история правок сегмента (track changes) ---

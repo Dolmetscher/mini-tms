@@ -232,3 +232,41 @@ def suggest(
     fuzzy.sort(key=lambda p: p[0], reverse=True)
     results = exact + [r for _, r in fuzzy]
     return results[: config.FUZZY_MAX_SUGGESTIONS]
+
+
+@router.patch("/tms/{tm_id}/entries/{entry_id}", response_model=schemas.TMEntryOut)
+def update_entry(
+    tm_id: int, entry_id: int, body: schemas.TMEntryUpdate, ctx: Context = Depends(get_context)
+):
+    """Правка перевода записи TM (maintenance, pm/admin).
+
+    Исходник — ключ памяти (уникален в TM) и не меняется: правится только
+    перевод. updated_at обновится сам (onupdate) — запись «свежая» для
+    сортировки при равном счете совпадения.
+    """
+    ctx.require_role("admin", "pm")
+    tm = _tm_or_404(ctx, tm_id)
+    entry = ctx.db.get(models.TMEntry, entry_id)
+    if entry is None or entry.tm_id != tm.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="TM entry not found")
+    entry.target_text = body.target_text
+    audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tm.entry_update", "tm_entry", entry.id, {})
+    ctx.db.commit()
+    ctx.db.refresh(entry)
+    return entry
+
+
+@router.delete("/tms/{tm_id}/entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_entry(tm_id: int, entry_id: int, ctx: Context = Depends(get_context)):
+    """Удаление записи TM: устаревший/ошибочный перевод перестает подсказываться."""
+    ctx.require_role("admin", "pm")
+    tm = _tm_or_404(ctx, tm_id)
+    entry = ctx.db.get(models.TMEntry, entry_id)
+    if entry is None or entry.tm_id != tm.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="TM entry not found")
+    ctx.db.delete(entry)
+    audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tm.entry_delete", "tm_entry", entry_id, {
+        "tm_id": tm.id,
+    })
+    ctx.db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

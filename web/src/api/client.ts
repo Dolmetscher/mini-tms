@@ -123,6 +123,14 @@ export async function downloadJobQuoteExport(jobId: number, rateCardId?: number)
   return downloadFile(`/api/jobs/${jobId}/quote/export${q({ rate_card_id: rateCardId })}`, `job-${jobId}-quote.docx`);
 }
 
+export async function downloadProjectDelivery(projectId: number): Promise<void> {
+  return downloadFile(`/api/projects/${projectId}/deliver`, `project-${projectId}-delivery.zip`);
+}
+
+export async function downloadProjectInvoice(projectId: number, rateCardId?: number): Promise<void> {
+  return downloadFile(`/api/projects/${projectId}/invoice/export${q({ rate_card_id: rateCardId })}`, `invoice-project-${projectId}.docx`);
+}
+
 export async function downloadOrgBackup(orgId: number): Promise<void> {
   return downloadFile(`/api/orgs/${orgId}/export`, `mini-tms-backup-org${orgId}.json`);
 }
@@ -178,6 +186,11 @@ export const api = {
   login: (username: string, password: string) =>
     request<LoginResponse>('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   me: () => request<LoginResponse>('/api/me'),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<void>('/api/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
 
   // projects & documents
   projects: () => request<Project[]>('/api/projects'),
@@ -268,6 +281,10 @@ export const api = {
     request<TMEntry[]>(`/api/tm/tms/${tmId}/entries${q({ q: search })}`),
   upsertTMEntry: (tmId: number, body: { source_text: string; target_text: string }) =>
     request<TMEntry>(`/api/tm/tms/${tmId}/entries`, { method: 'POST', body: JSON.stringify(body) }),
+  updateTMEntry: (tmId: number, entryId: number, target_text: string) =>
+    request<TMEntry>(`/api/tm/tms/${tmId}/entries/${entryId}`, { method: 'PATCH', body: JSON.stringify({ target_text }) }),
+  deleteTMEntry: (tmId: number, entryId: number) =>
+    request<void>(`/api/tm/tms/${tmId}/entries/${entryId}`, { method: 'DELETE' }),
   importTMX: (tmId: number, file: File) => {
     const fd = new FormData();
     fd.append('file', file);
@@ -280,6 +297,10 @@ export const api = {
     request<TBEntry[]>(`/api/tb/tbs/${tbId}/entries${q({ q: search })}`),
   addTBEntry: (tbId: number, body: { term: string; translation: string; note?: string; status?: string }) =>
     request<TBEntry>(`/api/tb/tbs/${tbId}/entries`, { method: 'POST', body: JSON.stringify(body) }),
+  updateTBEntry: (tbId: number, entryId: number, body: { term?: string; translation?: string; note?: string; status?: string }) =>
+    request<TBEntry>(`/api/tb/tbs/${tbId}/entries/${entryId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteTBEntry: (tbId: number, entryId: number) =>
+    request<void>(`/api/tb/tbs/${tbId}/entries/${entryId}`, { method: 'DELETE' }),
   importTB: (tbId: number, file: File) => {
     const fd = new FormData();
     fd.append('file', file);

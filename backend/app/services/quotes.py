@@ -1,6 +1,6 @@
-"""Котировки: расчет стоимости перевода из анализа объема × прайс-листа.
+"""Котировки и инвойсы: расчет стоимости перевода из анализа объема × прайс-листа.
 
-Замыкает цепочку «анализ → деньги» (практика ТMS с биллингом — XTRF,
+Замыкает цепочку «анализ → деньги» (практика TMS с биллингом — XTRF,
 Plunet, котировки Trados/memoQ):
 
 - Прайс-лист (RateCard) задает ставку за слово для каждой категории
@@ -11,7 +11,11 @@ Plunet, котировки Trados/memoQ):
   (rate × matched words per band), а не «взвешенные слова».
 - Минимальная сумма (min_charge) — стандарт индустрии: мелкий заказ
   оплачивается по минимуму, а не по 12 словам.
+- Инвойс (закрывающий документ) — та же математика, но только по сданным
+  (submitted/completed) заданиям: в оплату уходит выполненная работа.
 """
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
 
 from .. import config, models
@@ -80,19 +84,19 @@ def job_quote(db: Session, job: models.Job, card: models.RateCard) -> dict:
     }
 
 
-def project_quote(db: Session, project: models.Project, rate_card_id: int | None) -> dict:
-    """Котировка проекта: по прайс-листу на каждую языковую пару заданий.
+def _quote_jobs(
+    db: Session, project: models.Project, rate_card_id: int | None,
+    statuses: tuple[str, ...] | None = None,
+) -> tuple[list[dict], list[str]]:
+    """Котировки заданий проекта (опционально только в заданных статусах).
 
-    Итоги группируются по валюте: смешивать EUR и USD в одном числе нельзя.
-    Задания без прайс-листа пропускаются (в отчете их нет) — вызывающая
-    сторона сообщает пользователю, какие пары не покрыты.
+    Возвращает (котировки, непокрытые языковые пары). Задания без прайс-листа
+    пропускаются — вызывающая сторона сообщает, какие пары не покрыты.
     """
-    jobs = (
-        db.query(models.Job)
-        .filter(models.Job.project_id == project.id)
-        .order_by(models.Job.target_lang, models.Job.id)
-        .all()
-    )
+    query = db.query(models.Job).filter(models.Job.project_id == project.id)
+    if statuses:
+        query = query.filter(models.Job.status.in_(statuses))
+    jobs = query.order_by(models.Job.target_lang, models.Job.id).all()
     quoted, missing_pairs = [], []
     for job in jobs:
         card = resolve_rate_card(db, project.org_id, project.source_lang, job.target_lang, rate_card_id)
@@ -101,7 +105,15 @@ def project_quote(db: Session, project: models.Project, rate_card_id: int | None
                 missing_pairs.append(f"{project.source_lang}\u2192{job.target_lang}")
             continue
         quoted.append(job_quote(db, job, card))
+    return quoted, missing_pairs
 
+
+def project_quote(db: Session, project: models.Project, rate_card_id: int | None) -> dict:
+    """Котировка проекта: по прайс-листу на каждую языковую пару заданий.
+
+    Итоги группируются по валюте: смешивать EUR и USD в одном числе нельзя.
+    """
+    quoted, missing_pairs = _quote_jobs(db, project, rate_card_id)
     totals: dict[str, float] = {}
     for quote in quoted:
         totals[quote["currency"]] = round(totals.get(quote["currency"], 0.0) + quote["total"], 2)
@@ -110,6 +122,34 @@ def project_quote(db: Session, project: models.Project, rate_card_id: int | None
         "project_id": project.id,
         "project_name": project.name,
         "source_lang": project.source_lang,
+        "jobs": quoted,
+        "totals": [{"currency": cur, "total": total} for cur, total in totals.items()],
+        "missing_pairs": missing_pairs,
+    }
+
+
+def project_invoice(db: Session, project: models.Project, rate_card_id: int | None) -> dict:
+    """Инвойс проекта: та же математика, что в котировке, но только сданные задания.
+
+    Практика закрытия цикла (XTRF/Plunet): объем считается по строкам
+    котировки (анализ × ставка), а в оплату уходят задания в
+    submitted/completed — незакрытая работа не инвойсируется. Номер
+    детерминирован (INV-<проект>-<дата>), дата — день выдачи, пересчет в
+    другой день меняет только дату, объемы стабильны.
+    """
+    quoted, missing_pairs = _quote_jobs(
+        db, project, rate_card_id, statuses=("submitted", "completed")
+    )
+    totals: dict[str, float] = {}
+    for quote in quoted:
+        totals[quote["currency"]] = round(totals.get(quote["currency"], 0.0) + quote["total"], 2)
+    issued = datetime.now(timezone.utc)
+    return {
+        "project_id": project.id,
+        "project_name": project.name,
+        "source_lang": project.source_lang,
+        "invoice_no": f"INV-{project.id:04d}-{issued:%Y%m%d}",
+        "issued_on": issued.date().isoformat(),
         "jobs": quoted,
         "totals": [{"currency": cur, "total": total} for cur, total in totals.items()],
         "missing_pairs": missing_pairs,
