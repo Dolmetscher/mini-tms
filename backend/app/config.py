@@ -82,3 +82,14 @@ QA_REGEX_MAX_PATTERN = int(os.environ.get("TMS_QA_REGEX_MAX_PATTERN", "500"))
 # защита от спама — не более N сообщений от одного пользователя в час.
 FEEDBACK_MAX_MESSAGE = int(os.environ.get("TMS_FEEDBACK_MAX_MESSAGE", "4000"))
 FEEDBACK_MAX_PER_HOUR = int(os.environ.get("TMS_FEEDBACK_MAX_PER_HOUR", "10"))
+
+# Внешние уведомления (бета): SMTP и/или Telegram-бот. Пустые значения —
+# каналы выключены. Контакты (email, chat_id) пользователи задают себе сами
+# (PATCH /api/me); chat_id узнается у @userinfobot после /start боту.
+SMTP_HOST = os.environ.get("TMS_SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("TMS_SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("TMS_SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("TMS_SMTP_PASSWORD", "")
+SMTP_FROM = os.environ.get("TMS_SMTP_FROM", "mini-tms@localhost")
+SMTP_STARTTLS = os.environ.get("TMS_SMTP_STARTTLS", "1").lower() not in ("0", "false", "no")
+TG_BOT_TOKEN = os.environ.get("TMS_TG_BOT_TOKEN", "")

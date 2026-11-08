@@ -9,8 +9,10 @@ from sqlalchemy.orm import Session
 
 from .. import config, models, schemas
 from ..deps import Context, get_context
+from ..formats import segmentation
 from ..fuzzy import length_bound_ratio, normalize, similarity_ratio
 from ..helpers import can_manage, content_disposition
+from ..services import align as align_service
 from ..services import audit
 
 router = APIRouter(prefix="/api/tm", tags=["tm"])
@@ -196,6 +198,86 @@ def import_csv(tm_id: int, file: UploadFile = File(...), ctx: Context = Depends(
             updated += 1
         seen[source_text] = entry
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tm.import_csv", "tm", tm.id,
+                {"added": added, "updated": updated, "skipped": skipped})
+    ctx.db.commit()
+    return {"added": added, "updated": updated, "skipped": skipped}
+
+
+_ALIGN_FORMATS = ("txt", "docx")
+
+
+def _align_units(file: UploadFile) -> list[str]:
+    """Единицы параллельного файла: те же сплиттеры, что при импорте документов
+    (txt — непустые строки, docx — абзацы)."""
+    fmt = segmentation.detect_format(file.filename or "")
+    if fmt not in _ALIGN_FORMATS:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Alignment files must be .txt or .docx",
+        )
+    try:
+        segments, _ = segmentation.load_segments(fmt, file.file.read())
+    except Exception as exc:  # битый docx и т.п.
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Cannot read file: {exc}")
+    return [s for s in segments if s.strip()]
+
+
+@router.post("/tms/{tm_id}/align", response_model=schemas.AlignProposal)
+def align_files(
+    tm_id: int,
+    source_file: UploadFile = File(...),
+    target_file: UploadFile = File(...),
+    ctx: Context = Depends(get_context),
+):
+    """Выравнивание параллельных файлов: предложить пары «исходник-перевод»
+    для наполнения TM из архива старых переводов.
+
+    Пары НЕ записываются: подтверждение — отдельным запросом (человек
+    снимает галочки с неверных пар; эвристика на якорях-числах/именах).
+    """
+    ctx.require_role("admin", "pm")
+    tm = _tm_or_404(ctx, tm_id)
+    source_units = _align_units(source_file)
+    target_units = _align_units(target_file)
+    if not source_units or not target_units:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Both files must contain at least one non-empty unit",
+        )
+    pairs = align_service.align_units(source_units, target_units)
+    return {
+        "pairs": pairs,
+        "source_units": len(source_units),
+        "target_units": len(target_units),
+    }
+
+
+@router.post("/tms/{tm_id}/align/confirm", response_model=schemas.AlignConfirmResult)
+def align_confirm(tm_id: int, body: schemas.AlignConfirmRequest, ctx: Context = Depends(get_context)):
+    """Записать подтвержденные пары выравнивания в TM (upsert, как при импорте)."""
+    ctx.require_role("admin", "pm")
+    tm = _tm_or_404(ctx, tm_id)
+    added = updated = skipped = 0
+    seen: dict[str, models.TMEntry] = {}  # autoflush=False: дубли в памяти
+    for pair in body.pairs:
+        source_text, target_text = pair.source.strip(), pair.target.strip()
+        if not source_text or not target_text:
+            skipped += 1
+            continue
+        entry = seen.get(source_text) or (
+            ctx.db.query(models.TMEntry)
+            .filter(models.TMEntry.tm_id == tm.id, models.TMEntry.source_text == source_text)
+            .first()
+        )
+        if entry is None:
+            entry = models.TMEntry(tm_id=tm.id, source_text=source_text, target_text=target_text)
+            ctx.db.add(entry)
+            added += 1
+        else:
+            entry.target_text = target_text
+            updated += 1
+        seen[source_text] = entry
+    audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tm.align_confirm", "tm", tm.id,
                 {"added": added, "updated": updated, "skipped": skipped})
     ctx.db.commit()
     return {"added": added, "updated": updated, "skipped": skipped}

@@ -20,6 +20,10 @@ class User(Base):
     # Версия пароля: попадает в JWT; смена пароля инкрементирует — все
     # ранее выданные токены отзываются (stateless-ревокация).
     pwd_ver: Mapped[int] = mapped_column(default=1)
+    # Контакты для внешних уведомлений (бета): email и chat_id Telegram-бота.
+    # Пусто — пользователь не хочет получать уведомления наружу.
+    email: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="user")

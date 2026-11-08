@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from .. import config, models, schemas
@@ -18,7 +18,7 @@ from ..helpers import (
     serialize_job,
     utcnow,
 )
-from ..services import audit, delivery, lqa, leveraging, locks, notify, qa
+from ..services import audit, delivery, handoff, lqa, leveraging, locks, notify, pseudo, qa
 from ..services.mt import MTError, get_provider
 from ..ws import make_event, manager
 
@@ -189,29 +189,7 @@ async def unlock_segment(segment_id: int, ctx: Context = Depends(get_context)):
 
 def _write_translations_to_tm(db: Session, job: models.Job, segment: models.Segment) -> None:
     """Подтвержденный перевод записывается в TM проекта с правом записи (FR-06/FR-12)."""
-    resources = (
-        db.query(models.ProjectResource, models.TM)
-        .join(models.TM, models.ProjectResource.tm_id == models.TM.id)
-        .filter(
-            models.ProjectResource.project_id == job.project_id,
-            models.ProjectResource.use_for_write.is_(True),
-            models.TM.source_lang == job.project.source_lang,
-            models.TM.target_lang == job.target_lang,
-        )
-        .all()
-    )
-    for _, tm in resources:
-        entry = (
-            db.query(models.TMEntry)
-            .filter(models.TMEntry.tm_id == tm.id, models.TMEntry.source_text == segment.source_text)
-            .first()
-        )
-        if entry is None:
-            db.add(models.TMEntry(
-                tm_id=tm.id, source_text=segment.source_text, target_text=segment.target_text,
-            ))
-        else:
-            entry.target_text = segment.target_text
+    leveraging.write_translation_to_tm(db, job, segment)
 
 
 @router.patch("/segments/{segment_id}", response_model=schemas.SegmentOut)
@@ -710,6 +688,105 @@ def export_bilingual(job_id: int, ctx: Context = Depends(get_context)):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": content_disposition(f"{base}_{job.target_lang}_bilingual.docx")},
     )
+
+
+@router.post("/jobs/{job_id}/pseudo-translate", response_model=schemas.PseudoTranslateResult)
+async def pseudo_translate_job(
+    job_id: int, body: schemas.PseudoTranslateRequest, ctx: Context = Depends(get_context)
+):
+    """Псевдо-перевод (проверка пайплайна): сегменты заполняются синтетикой —
+    диакритика + удлиннение ~40%, теги/числа/плейсхолдеры сохраняются.
+
+    Экспорт после такого заполнения проверяет всю цепочку (теги, QA чисел,
+    верстку длинных строк) до того, как переводчик сел работать.
+    """
+    job = job_or_404(ctx, job_id)
+    if not can_manage(ctx) and job.assignee_id != ctx.user_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Job is not assigned to you")
+    if job.status not in EDITABLE_STATUSES:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"Job status '{job.status}' does not allow editing",
+        )
+    result = pseudo.pseudo_translate(ctx.db, job, ctx.user_id, body.overwrite)
+    audit.audit(
+        ctx.db, ctx.org_id, ctx.user_id, "job.pseudo_translate", "job", job.id,
+        {**result, "overwrite": body.overwrite},
+    )
+    ctx.db.commit()
+    await manager.send_users(
+        org_member_ids(ctx.db, ctx.org_id),
+        make_event("job_pseudo_translated", job_id=job.id, user=ctx.user.username, **result),
+    )
+    return result
+
+
+@router.get("/jobs/{job_id}/export-xliff")
+def export_xliff_handoff(job_id: int, ctx: Context = Depends(get_context)):
+    """Хендофф-пакет XLIFF 1.2 для внешнего переводчика (Trados/memoQ/OmegaT).
+
+    Доступен исполнителю и менеджменту на любом статусе — рабочий файл,
+    не готовый продукт (в отличие от /export). Возврат — import-xliff.
+    """
+    job = job_or_404(ctx, job_id)
+    ensure_job_access(ctx, job)
+    payload = handoff.export_job_xliff(job)
+    base, _ = os.path.splitext(job.document.name)
+    audit.audit(
+        ctx.db, ctx.org_id, ctx.user_id, "job.export_xliff", "job", job.id,
+        {"segments": len(job.segments)},
+    )
+    ctx.db.commit()
+    return Response(
+        content=payload,
+        media_type="application/x-xliff+xml",
+        headers={"Content-Disposition": content_disposition(f"{base}_{job.target_lang}_handoff.xliff")},
+    )
+
+
+@router.post("/jobs/{job_id}/import-xliff", response_model=schemas.HandoffImportResult)
+async def import_xliff_handoff(
+    job_id: int, file: UploadFile = File(...), ctx: Context = Depends(get_context)
+):
+    """Влить возвращенный XLIFF в задание: target с state translated/final
+    (или approved) подтверждается как ручной Confirm (TM + автопропагация),
+    остальные — черновики. Чужие свежие локи сегментов уважаются (skip).
+    """
+    job = job_or_404(ctx, job_id)
+    if not can_manage(ctx) and job.assignee_id != ctx.user_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Job is not assigned to you")
+    if job.status not in EDITABLE_STATUSES:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"Job status '{job.status}' does not allow editing",
+        )
+    content = await file.read()
+    try:
+        stats, changed = handoff.import_job_xliff(ctx.db, job, content, ctx.user_id)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    audit.audit(
+        ctx.db, ctx.org_id, ctx.user_id, "job.import_xliff", "job", job.id, stats
+    )
+    ctx.db.commit()
+    for segment in changed:
+        ctx.db.refresh(segment)
+        await manager.send_users(
+            org_member_ids(ctx.db, ctx.org_id),
+            make_event(
+                "segment_updated",
+                job_id=job.id,
+                segment_id=segment.id,
+                position=segment.position,
+                translation_status=segment.translation_status,
+                confirmed=segment.confirmed,
+                target_text=segment.target_text,
+                job_status=job.status,
+                user=ctx.user.username,
+                updated_at=segment.updated_at.isoformat(),
+            ),
+        )
+    return stats
 
 
 @router.get("/jobs/{job_id}/segments/{segment_id}/mt", response_model=schemas.MTSuggestion)

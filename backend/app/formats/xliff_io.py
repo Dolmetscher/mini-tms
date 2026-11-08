@@ -162,6 +162,45 @@ def load_translations(content: bytes) -> list[str | None]:
     return translations
 
 
+def load_units(content: bytes) -> list[dict]:
+    """Единицы XLIFF 1.2 с идентификаторами — для хендофф-импорта.
+
+    Возвращает [{id, source, target, translated}]: id — атрибут trans-unit
+    (у наших хендофф-пакетов это позиция сегмента), source/target — тексты с
+    нормализованными inline-токенами, translated — подтвержден ли перевод
+    (approved=yes или state translated/signed-off/final — как в load_translations).
+    """
+    if _is_version_2(content):
+        raise ValueError("XLIFF 2.0 handoff import is not supported; use XLIFF 1.2")
+    tree = etree.parse(io.BytesIO(content))
+    root = tree.getroot()
+    units: list[dict] = []
+    for unit in root.iter():
+        if _local(unit.tag) != "trans-unit":
+            continue
+        source = _child_by_local(unit, "source")
+        if source is None:
+            continue
+        src_text, _ = _inline_to_tokens(source)
+        if not src_text.strip():
+            continue
+        target = _child_by_local(unit, "target")
+        tgt_text = ""
+        translated = False
+        if target is not None:
+            tgt_text, _ = _inline_to_tokens(target)
+            tgt_text = tgt_text.strip()
+            state = (target.get("state") or "").strip()
+            translated = unit.get("approved") == "yes" or state in _TRANSLATED_STATES
+        units.append({
+            "id": (unit.get("id") or "").strip(),
+            "source": src_text.strip(),
+            "target": tgt_text,
+            "translated": translated and bool(tgt_text),
+        })
+    return units
+
+
 def export_file(original: bytes, targets: list[str]) -> bytes:
     if _is_version_2(original):
         return xliff2_io.export_file(original, targets)

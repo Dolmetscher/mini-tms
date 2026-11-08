@@ -234,3 +234,34 @@ def propagate_translation(db: Session, job: models.Job, segment: models.Segment)
             ))
             propagated.append(other)
     return propagated
+
+
+def write_translation_to_tm(db: Session, job: models.Job, segment: models.Segment) -> None:
+    """Подтвержденный перевод записывается в TM проекта с правом записи (FR-06/FR-12).
+
+    Жила в роутере заданий; перенесена сюда — теперь и хендофф-импорт XLIFF
+    пишет подтвержденные переводы в TM тем же правилом, что и ручное подтверждение.
+    """
+    resources = (
+        db.query(models.ProjectResource, models.TM)
+        .join(models.TM, models.ProjectResource.tm_id == models.TM.id)
+        .filter(
+            models.ProjectResource.project_id == job.project_id,
+            models.ProjectResource.use_for_write.is_(True),
+            models.TM.source_lang == job.project.source_lang,
+            models.TM.target_lang == job.target_lang,
+        )
+        .all()
+    )
+    for _, tm in resources:
+        entry = (
+            db.query(models.TMEntry)
+            .filter(models.TMEntry.tm_id == tm.id, models.TMEntry.source_text == segment.source_text)
+            .first()
+        )
+        if entry is None:
+            db.add(models.TMEntry(
+                tm_id=tm.id, source_text=segment.source_text, target_text=segment.target_text,
+            ))
+        else:
+            entry.target_text = segment.target_text

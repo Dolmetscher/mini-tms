@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   api, downloadTbExport, downloadTbExportTbx, downloadTmExport, downloadTmExportCsv,
 } from '../api/client';
-import type { QaRegexRule, QaRegexTestResult, TBEntry, TBInfo, TMEntry, TMInfo } from '../api/types';
+import type { AlignProposal, QaRegexRule, QaRegexTestResult, TBEntry, TBInfo, TMEntry, TMInfo } from '../api/types';
 
 type Tab = 'tm' | 'tb' | 'qa';
 
@@ -50,6 +50,14 @@ export default function ResourcesPage() {
   const [ruleError, setRuleError] = useState('');
   const [testText, setTestText] = useState('');
   const [testResult, setTestResult] = useState<QaRegexTestResult | null>(null);
+  // Выравнивание параллельных файлов -> TM
+  const [alignOpen, setAlignOpen] = useState(false);
+  const [alignSrc, setAlignSrc] = useState<File | null>(null);
+  const [alignTgt, setAlignTgt] = useState<File | null>(null);
+  const [alignProposal, setAlignProposal] = useState<AlignProposal | null>(null);
+  const [alignChecked, setAlignChecked] = useState<Set<number>>(new Set());
+  const [alignBusy, setAlignBusy] = useState(false);
+  const [notice, setNotice] = useState('');
 
   const loadLists = useCallback(() => {
     api.tms().then(setTms).catch((e) => setError(e instanceof Error ? e.message : 'Load failed'));
@@ -132,6 +140,51 @@ export default function ResourcesPage() {
       .catch(() => undefined);
   };
 
+  // --- Выравнивание параллельных файлов -> TM ---
+
+  const proposeAlignment = async () => {
+    if (!selectedTm || !alignSrc || !alignTgt) return;
+    setAlignBusy(true);
+    setError('');
+    try {
+      const proposal = await api.alignFiles(selectedTm, alignSrc, alignTgt);
+      setAlignProposal(proposal);
+      // По умолчанию отмечены уверенные пары (скор ≥ 50%); слабые — глазами
+      setAlignChecked(new Set(
+        proposal.pairs.map((p, i) => (p.score >= 0.5 ? i : -1)).filter((i) => i >= 0),
+      ));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Alignment failed');
+      setAlignProposal(null);
+    } finally {
+      setAlignBusy(false);
+    }
+  };
+
+  const confirmAlignmentPairs = async () => {
+    if (!selectedTm || !alignProposal) return;
+    const chosen = alignProposal.pairs.filter((_, i) => alignChecked.has(i));
+    if (!chosen.length) return;
+    setAlignBusy(true);
+    setError('');
+    try {
+      const r = await api.confirmAlignment(
+        selectedTm, chosen.map((p) => ({ source: p.source, target: p.target })),
+      );
+      setNotice(`Alignment: ${r.added} added, ${r.updated} updated in the TM.`);
+      setAlignOpen(false);
+      setAlignProposal(null);
+      setAlignSrc(null);
+      setAlignTgt(null);
+      loadLists();
+      loadEntries();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Alignment confirm failed');
+    } finally {
+      setAlignBusy(false);
+    }
+  };
+
   const exportTm = (tmId: number) => {
     void act(async () => downloadTmExport(tmId));
   };
@@ -191,6 +244,7 @@ export default function ResourcesPage() {
       </section>
 
       {error && <div className="alert">{error}</div>}
+      {notice && <div className="notice">{notice}</div>}
 
       {tab === 'tm' && (
         <>
@@ -231,6 +285,10 @@ export default function ResourcesPage() {
                 <button className="btn small" onClick={() => exportTmCsv(selectedTm)}
                         title="Экспорт в CSV (source,target) — тот же шаблон, что и импорт">
                   Export CSV
+                </button>
+                <button className="btn small" onClick={() => { setNotice(''); setError(''); setAlignOpen(true); }}
+                        title="Наполнить TM из старых переводов: два параллельных файла, пары подтвердите сами">
+                  Align files…
                 </button>
               </>
             )}
@@ -299,6 +357,75 @@ export default function ResourcesPage() {
                 </tbody>
               </table>
             </section>
+          )}
+
+          {alignOpen && (
+            <div className="modal-backdrop" onClick={() => setAlignOpen(false)}>
+              <div className="modal card align-modal" onClick={(e) => e.stopPropagation()}>
+                <h3 className="panel-title">Align parallel files → TM</h3>
+                <p className="muted">
+                  Upload an old source file and its translation (.txt / .docx). Pairs are matched by
+                  anchors — numbers and proper names — then reviewed by you before anything is written.
+                </p>
+                <div className="row wrap" style={{ gap: 8, marginTop: 10 }}>
+                  <label className="btn small" style={{ cursor: 'pointer' }}>
+                    {alignSrc ? `SRC: ${alignSrc.name}` : 'Source file…'}
+                    <input type="file" accept=".txt,.docx" hidden
+                           onChange={(e) => setAlignSrc(e.target.files?.[0] ?? null)} />
+                  </label>
+                  <label className="btn small" style={{ cursor: 'pointer' }}>
+                    {alignTgt ? `TGT: ${alignTgt.name}` : 'Translation file…'}
+                    <input type="file" accept=".txt,.docx" hidden
+                           onChange={(e) => setAlignTgt(e.target.files?.[0] ?? null)} />
+                  </label>
+                  <span className="spacer" />
+                  <button className="btn small primary" disabled={!alignSrc || !alignTgt || alignBusy}
+                          onClick={() => void proposeAlignment()}>
+                    {alignBusy ? 'Working…' : 'Propose pairs'}
+                  </button>
+                </div>
+
+                {alignProposal && (
+                  <>
+                    <p className="muted small-text" style={{ marginTop: 10 }}>
+                      {alignProposal.pairs.length} pair(s) proposed · source {alignProposal.source_units} units,
+                      translation {alignProposal.target_units}. Match score = shared anchors; uncheck anything wrong.
+                    </p>
+                    <div className="align-list">
+                      {alignProposal.pairs.map((p, i) => (
+                        <label key={i} className="align-row">
+                          <input
+                            type="checkbox"
+                            checked={alignChecked.has(i)}
+                            onChange={() => setAlignChecked((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(i)) next.delete(i);
+                              else next.add(i);
+                              return next;
+                            })}
+                          />
+                          <span className={`align-score ${p.score >= 0.5 ? 'good' : ''}`}>
+                            {Math.round(p.score * 100)}%
+                          </span>
+                          <span className="align-texts">
+                            <span>{p.source}</span>
+                            <span className="muted">{p.target}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="row" style={{ marginTop: 10 }}>
+                      <button className="btn" onClick={() => setAlignOpen(false)}>Cancel</button>
+                      <span className="spacer" />
+                      <button className="btn primary" disabled={alignBusy || alignChecked.size === 0}
+                              onClick={() => void confirmAlignmentPairs()}>
+                        Add {alignChecked.size} pair(s) to TM
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           )}
         </>
       )}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import { api, ApiError, downloadBilingualExport } from '../api/client';
+import { api, ApiError, downloadBilingualExport, downloadJobXliffHandoff } from '../api/client';
 import type {
   AnalysisReport, JobDetail, LockConflictBody, MTSuggestion, QAReport, Segment, SegmentLockInfo,
   SegmentNote, SegmentRevision, TBHit, TMSuggestion, WsEvent,
@@ -92,6 +92,11 @@ export default function EditorPage() {
   const [analysis, setAnalysis] = useState<AnalysisReport | null>(null);
   const [preTrOpen, setPreTrOpen] = useState(false);
   const [preTrBusy, setPreTrBusy] = useState(false);
+  // Псевдо-перевод (проверка пайплайна) и XLIFF-хендофф
+  const [pseudoOpen, setPseudoOpen] = useState(false);
+  const [pseudoBusy, setPseudoBusy] = useState(false);
+  const [handoffBusy, setHandoffBusy] = useState(false);
+  const handoffInputRef = useRef<HTMLInputElement | null>(null);
   const [notice, setNotice] = useState('');
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [findText, setFindText] = useState('');
@@ -303,6 +308,15 @@ export default function EditorPage() {
     };
   }, []);
 
+  // Хоткеи редактора: слушатель один (стабильный), логика — через ref,
+  // чтобы всегда видеть актуальные сегменты и черновик
+  const hotkeysRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => hotkeysRef.current(e);
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   const toggleHistory = async () => {
     if (!active) return;
     if (historyOpen) {
@@ -468,6 +482,30 @@ export default function EditorPage() {
     if (next) void selectSegment(next);
   };
 
+  // Актуальная логика хоткеев (переназначается каждый рендер — см. ref выше).
+  // Ctrl+Enter — подтвердить и вниз; Ctrl/Alt+↑↓ — навигация; Alt+T — копировать
+  // исходник в перевод; Ctrl+S — сохранить черновик сейчас. Работают при фокусе
+  // в любом месте страницы, кроме полей ввода (там — только Ctrl+S).
+  hotkeysRef.current = (e: KeyboardEvent) => {
+    if (!job || !canEdit) return;
+    if (e.ctrlKey && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault();
+      if (active && saveState === 'dirty' && !blockedBy) void persist(active, draft);
+      return;
+    }
+    const target = e.target as HTMLElement | null;
+    const inTextField = target !== null
+      && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT');
+    if (inTextField) return; // поиск/комментарии/чужие поля — не перехватываем
+    if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); void confirmAndNext(); return; }
+    if ((e.ctrlKey || e.altKey) && e.key === 'ArrowDown') { e.preventDefault(); goto(1); return; }
+    if ((e.ctrlKey || e.altKey) && e.key === 'ArrowUp') { e.preventDefault(); goto(-1); return; }
+    if (e.altKey && (e.key === 't' || e.key === 'T') && active && !blockedBy) {
+      e.preventDefault();
+      onChangeDraft(active.source_text);
+    }
+  };
+
   const runMt = async () => {
     if (!active || !job) return;
     setMtBusy(true);
@@ -556,6 +594,42 @@ export default function EditorPage() {
     }
   };
 
+  const runPseudo = async (overwrite: boolean) => {
+    if (overwrite && !window.confirm('Overwrite ALL segment translations with pseudo-text?')) return;
+    setPseudoBusy(true);
+    try {
+      const r = await api.pseudoTranslateJob(jobId, overwrite);
+      setPseudoOpen(false);
+      setNotice(
+        `Pseudo-translate: ${r.filled} segment(s) filled` +
+        `${r.skipped_nonempty ? `, ${r.skipped_nonempty} translated skipped` : ''}. ` +
+        'Tags and numbers are kept — export the file to verify the pipeline.',
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Pseudo-translate failed');
+    } finally {
+      setPseudoBusy(false);
+    }
+  };
+
+  const importHandoff = async (file: File) => {
+    setHandoffBusy(true);
+    try {
+      const r = await api.importJobXliff(jobId, file);
+      setNotice(
+        `XLIFF imported: ${r.updated} updated, ${r.confirmed} confirmed` +
+        `${r.skipped_locked ? `, ${r.skipped_locked} locked by another editor` : ''}` +
+        `${r.skipped ? `, ${r.skipped} skipped` : ''}.`,
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'XLIFF import failed');
+    } finally {
+      setHandoffBusy(false);
+    }
+  };
+
   const addNote = async () => {
     if (!active || !noteText.trim()) return;
     try {
@@ -604,6 +678,31 @@ export default function EditorPage() {
         >
           Bilingual DOCX
         </button>
+        <button
+          className="btn small"
+          title="XLIFF 1.2 handoff package for external CAT tools (Trados/memoQ/OmegaT)"
+          onClick={() => downloadJobXliffHandoff(jobId).catch((e: Error) => setError(e.message))}
+        >
+          XLIFF handoff
+        </button>
+        {canEdit && (
+          <button
+            className="btn small"
+            disabled={handoffBusy}
+            title="Merge an XLIFF returned by the external translator"
+            onClick={() => handoffInputRef.current?.click()}
+          >
+            {handoffBusy ? 'Importing…' : 'Import XLIFF'}
+          </button>
+        )}
+        <input
+          ref={handoffInputRef} type="file" accept=".xliff,.xlf" hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (file) void importHandoff(file);
+          }}
+        />
         <span className={`save-state save-${saveState}`}>{saveLabel[saveState]}</span>
       </section>
 
@@ -629,6 +728,10 @@ export default function EditorPage() {
         <button className="btn small" onClick={() => void openAnalysis()}>Analysis</button>
         {canEdit && (
           <button className="btn small" onClick={() => { setNotice(''); setPreTrOpen(true); }}>Pre-translate…</button>
+        )}
+        {canEdit && (
+          <button className="btn small" onClick={() => { setNotice(''); setPseudoOpen(true); }}
+                  title="Fill segments with synthetic text to test export">Pseudo-fill…</button>
         )}
         {canEdit && (
           <button className="btn small" onClick={() => { setNotice(''); setReplaceOpen(true); }} title="Ctrl+H">Replace…</button>
@@ -837,7 +940,7 @@ export default function EditorPage() {
                     />
                     <div className="row wrap">
                       <button className="btn primary" onClick={() => void confirmAndNext()}>Confirm & Next</button>
-                      <span className="muted small-text">Ctrl+Enter · Alt+↑/↓</span>
+                      <span className="muted small-text">Ctrl+Enter · Ctrl/Alt+↑/↓ · Alt+T · Ctrl+S</span>
                       <span className="spacer" />
                       <button className="btn small" onClick={() => void runMt()} disabled={mtBusy}>
                         {mtBusy ? 'MT…' : 'Get MT'}
@@ -1043,6 +1146,30 @@ export default function EditorPage() {
             </div>
             <p className="muted small-text" style={{ marginTop: 10 }}>
               Conservative choice: exact only. Fuzzy drafts need more post-editing.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {pseudoOpen && (
+        <div className="modal-backdrop" onClick={() => setPseudoOpen(false)}>
+          <div className="modal card" onClick={(e) => e.stopPropagation()}>
+            <h3 className="panel-title">Pseudo-translate (pipeline test)</h3>
+            <p className="muted">
+              Fills segments with synthetic text — accented letters, ~40% longer, tags/numbers/placeholders
+              kept. Use it to verify export and layout <b>before</b> the translation starts.
+            </p>
+            <div className="row" style={{ marginTop: 10 }}>
+              <button className="btn primary" disabled={pseudoBusy} onClick={() => void runPseudo(false)}>
+                Fill empty only
+              </button>
+              <span className="spacer" />
+              <button className="btn" disabled={pseudoBusy} onClick={() => void runPseudo(true)}>
+                Overwrite all
+              </button>
+            </div>
+            <p className="muted small-text" style={{ marginTop: 10 }}>
+              Results are unconfirmed drafts — QA still requires confirmation per segment.
             </p>
           </div>
         </div>

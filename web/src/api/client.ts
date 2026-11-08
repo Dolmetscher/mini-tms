@@ -1,9 +1,9 @@
 import type {
-  AnalysisReport, AppNotification, DocumentInfo, FeedbackItem, FeedbackKind, Job, JobDetail,
-  LQAError, LQAReport, LoginResponse, Member, MTSuggestion, PreTranslateResult, ProductivityRow,
-  Project, ProjectQuote, QaRegexRule, QaRegexTestResult, QAReport, RateCard, Resource, Segment,
-  SegmentLockResponse, SegmentNote, SegmentRevision, TBEntry, TBHit, TBInfo, TMEntry, TMInfo,
-  TMSuggestion, User,
+  AlignProposal, AlignPair, AnalysisReport, AppNotification, DocumentInfo, FeedbackItem, FeedbackKind,
+  HandoffImportResult, Job, JobDetail, LQAError, LQAReport, LoginResponse, Member, MTSuggestion,
+  PreTranslateResult, ProductivityRow, Project, ProjectQuote, PseudoTranslateResult, QaRegexRule,
+  QaRegexTestResult, QAReport, RateCard, Resource, Segment, SegmentLockResponse, SegmentNote,
+  SegmentRevision, TBEntry, TBHit, TBInfo, TMEntry, TMInfo, TMSuggestion, User,
 } from './types';
 
 /** Дефолтный адрес API: env-переменная сборки → origin страницы (SPA с бэкенда
@@ -122,6 +122,10 @@ export async function downloadTbExportTbx(tbId: number): Promise<void> {
 
 export async function downloadBilingualExport(jobId: number): Promise<void> {
   return downloadFile(`/api/jobs/${jobId}/export-bilingual`, `job-${jobId}-bilingual.docx`);
+}
+
+export async function downloadJobXliffHandoff(jobId: number): Promise<void> {
+  return downloadFile(`/api/jobs/${jobId}/export-xliff`, `job-${jobId}-handoff.xliff`);
 }
 
 export async function downloadJobQuoteExport(jobId: number, rateCardId?: number): Promise<void> {
@@ -278,6 +282,17 @@ export const api = {
     request<PreTranslateResult>(`/api/jobs/${id}/pre-translate`, {
       method: 'POST', body: JSON.stringify({ min_score: minScore }),
     }),
+  // Псевдо-перевод: заполнить сегменты синтетикой для проверки пайплайна
+  pseudoTranslateJob: (id: number, overwrite: boolean) =>
+    request<PseudoTranslateResult>(`/api/jobs/${id}/pseudo-translate`, {
+      method: 'POST', body: JSON.stringify({ overwrite }),
+    }),
+  // XLIFF-хендофф: возврат пакета из внешнего CAT-инструмента
+  importJobXliff: (id: number, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return request<HandoffImportResult>(`/api/jobs/${id}/import-xliff`, { method: 'POST', body: fd });
+  },
   saveSegment: (id: number, body: { target_text?: string; confirmed?: boolean; base_updated_at?: string }) =>
     request<Segment>(`/api/segments/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   // Локи «кто редактирует — тот блокирует»: захват/продление (heartbeat) и снятие
@@ -332,6 +347,17 @@ export const api = {
   tms: () => request<TMInfo[]>('/api/tm/tms'),
   createTM: (body: { name: string; source_lang: string; target_lang: string }) =>
     request<TMInfo>('/api/tm/tms', { method: 'POST', body: JSON.stringify(body) }),
+  // Выравнивание параллельных файлов: предложение пар и подтверждение
+  alignFiles: (tmId: number, sourceFile: File, targetFile: File) => {
+    const fd = new FormData();
+    fd.append('source_file', sourceFile);
+    fd.append('target_file', targetFile);
+    return request<AlignProposal>(`/api/tm/tms/${tmId}/align`, { method: 'POST', body: fd });
+  },
+  confirmAlignment: (tmId: number, pairs: Pick<AlignPair, 'source' | 'target'>[]) =>
+    request<{ added: number; updated: number; skipped: number }>(`/api/tm/tms/${tmId}/align/confirm`, {
+      method: 'POST', body: JSON.stringify({ pairs }),
+    }),
   tmEntries: (tmId: number, search?: string, offset?: number, limit?: number) =>
     requestPage<TMEntry>(`/api/tm/tms/${tmId}/entries${q({ q: search, offset, limit })}`),
   upsertTMEntry: (tmId: number, body: { source_text: string; target_text: string }) =>
@@ -386,6 +412,10 @@ export const api = {
   sendFeedback: (body: { kind: FeedbackKind; message: string; page?: string }) =>
     request<FeedbackItem>('/api/feedback', { method: 'POST', body: JSON.stringify(body) }),
   feedback: (limit?: number) => request<FeedbackItem[]>(`/api/feedback${q({ limit })}`),
+
+  // контакты для внешних уведомлений (email / Telegram)
+  updateMyContact: (body: { email?: string; telegram_chat_id?: string }) =>
+    request<User>('/api/me', { method: 'PATCH', body: JSON.stringify(body) }),
 };
 
 export function userLabel(user: User | null): string {

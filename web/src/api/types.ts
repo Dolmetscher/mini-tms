@@ -6,6 +6,8 @@ export type JobStatus =
 export interface User {
   id: number;
   username: string;
+  email?: string | null;
+  telegram_chat_id?: string | null;
 }
 
 export interface Membership {
@@ -366,4 +368,38 @@ export interface FeedbackItem {
   page: string;
   author: User;
   created_at: string;
+}
+
+// --- псевдо-перевод / хендофф / выравнивание / контакты ---
+
+export interface PseudoTranslateResult {
+  filled: number;
+  skipped_nonempty: number;
+}
+
+export interface HandoffImportResult {
+  updated: number;
+  confirmed: number;
+  skipped: number;
+  skipped_locked: number;
+}
+
+export interface AlignPair {
+  source: string;
+  target: string;
+  score: number;
+  source_index: number;
+  target_index: number;
+}
+
+export interface AlignProposal {
+  pairs: AlignPair[];
+  source_units: number;
+  target_units: number;
+}
+
+export interface AlignConfirmResult {
+  added: number;
+  updated: number;
+  skipped: number;
 }

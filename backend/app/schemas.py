@@ -43,6 +43,8 @@ class NewToken(BaseModel):
 class UserOut(AuthoredModel):
     id: int
     username: str
+    email: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
 
 
 class MembershipOut(AuthoredModel):
@@ -629,3 +631,70 @@ class FeedbackOut(AuthoredModel):
     page: str
     author: UserRef
     created_at: datetime
+
+
+# --- псевдо-перевод (проверка экспорт-пайплайна до перевода) ---
+
+
+class PseudoTranslateRequest(BaseModel):
+    """overwrite=True — перезаписать и уже переведенные сегменты
+    (полный прогон пайплайна); по умолчанию заполняются только пустые."""
+
+    overwrite: bool = False
+
+
+class PseudoTranslateResult(BaseModel):
+    filled: int
+    skipped_nonempty: int
+
+
+# --- XLIFF-хендофф для внешних переводчиков ---
+
+
+class HandoffImportResult(BaseModel):
+    updated: int
+    confirmed: int
+    skipped: int
+    skipped_locked: int
+
+
+# --- выравнивание параллельных файлов -> TM ---
+
+
+class AlignPair(BaseModel):
+    source: str
+    target: str
+    score: float
+    source_index: int
+    target_index: int
+
+
+class AlignProposal(BaseModel):
+    pairs: list[AlignPair]
+    source_units: int
+    target_units: int
+
+
+class AlignPairIn(BaseModel):
+    source: str = Field(min_length=1)
+    target: str = Field(min_length=1)
+
+
+class AlignConfirmRequest(BaseModel):
+    pairs: list[AlignPairIn] = Field(min_length=1, max_length=2000)
+
+
+class AlignConfirmResult(BaseModel):
+    added: int
+    updated: int
+    skipped: int
+
+
+# --- контакты пользователя для внешних уведомлений ---
+
+
+class ContactUpdate(BaseModel):
+    """Email и/или chat_id Telegram-бота; None/"" — очистить канал."""
+
+    email: Optional[str] = Field(default=None, max_length=200)
+    telegram_chat_id: Optional[str] = Field(default=None, max_length=64)

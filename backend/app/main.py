@@ -28,11 +28,15 @@ logger = logging.getLogger("mini-tms")
 
 def _ensure_schema() -> None:
     """create_all не добавляет колонки к существующим таблицам (SQLite):
-    мини-миграция pwd_ver (stateless-ревокация токенов при смене пароля)."""
+    мини-миграции — pwd_ver (ревокация токенов) и контакты внешних уведомлений."""
     columns = {c["name"] for c in inspect(engine).get_columns("users")}
     if "pwd_ver" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE users ADD COLUMN pwd_ver INTEGER NOT NULL DEFAULT 1"))
+    for column in ("email", "telegram_chat_id"):
+        if column not in columns:
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {column} TEXT"))
 
 
 @asynccontextmanager

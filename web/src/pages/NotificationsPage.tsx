@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { AppNotification } from '../api/types';
 import { useUpdates } from '../ws/useUpdates';
+import { useAuth } from '../state/AuthContext';
 
 const TYPE_LABELS: Record<string, string> = {
   job_assigned: 'New job assigned',
@@ -17,12 +18,37 @@ const TYPE_LABELS: Record<string, string> = {
 
 export default function NotificationsPage() {
   const [items, setItems] = useState<AppNotification[]>([]);
+  // Контакты для внешних уведомлений (email / Telegram) — только при включенных каналах
+  const [email, setEmail] = useState('');
+  const [tgChat, setTgChat] = useState('');
+  const [contactSaved, setContactSaved] = useState(false);
+  const [contactError, setContactError] = useState('');
+  const { token } = useAuth();
 
   const load = useCallback(() => {
     api.notifications().then(setItems).catch(() => setItems([]));
   }, []);
 
   useEffect(load, [load]);
+
+  useEffect(() => {
+    if (!token) return;
+    api.me()
+      .then((r) => { setEmail(r.user.email ?? ''); setTgChat(r.user.telegram_chat_id ?? ''); })
+      .catch(() => undefined);
+  }, [token]);
+
+  const saveContacts = async () => {
+    setContactError('');
+    setContactSaved(false);
+    try {
+      await api.updateMyContact({ email: email.trim(), telegram_chat_id: tgChat.trim() });
+      setContactSaved(true);
+      window.setTimeout(() => setContactSaved(false), 2500);
+    } catch (err) {
+      setContactError(err instanceof Error ? err.message : 'Save failed');
+    }
+  };
 
   useUpdates((event) => {
     if (event.type === 'notification') load();
@@ -71,6 +97,24 @@ export default function NotificationsPage() {
             </div>
           );
         })}
+      </section>
+
+      <section className="card column" style={{ gap: 8 }}>
+        <h3 className="panel-title">External delivery channels (beta)</h3>
+        <p className="muted small-text" style={{ margin: 0 }}>
+          Job events (assignment, submission, rework, deadline reminders) can also reach you by email
+          or Telegram if the administrator has enabled those channels. Telegram: message the bot first,
+          then paste your numeric chat id (from @userinfobot) or @username.
+        </p>
+        <div className="row wrap">
+          <input placeholder="you@example.com" value={email} style={{ minWidth: 240 }}
+                 onChange={(e) => setEmail(e.target.value)} />
+          <input placeholder="Telegram chat id / @username" value={tgChat} style={{ minWidth: 200 }}
+                 onChange={(e) => setTgChat(e.target.value)} />
+          <button className="btn small primary" onClick={() => void saveContacts()}>Save</button>
+          {contactSaved && <span className="done-note">✓ Saved</span>}
+        </div>
+        {contactError && <div className="alert">{contactError}</div>}
       </section>
     </>
   );

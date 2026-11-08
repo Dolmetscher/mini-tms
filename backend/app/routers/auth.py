@@ -9,6 +9,7 @@
   новая пара PBKDF2 (200k итераций). Существующие JWT остаются валидными
   до истечения — stateless-токены, «выйти со всех устройств» нет (MVP).
 """
+import re
 import threading
 import time
 from collections import deque
@@ -19,7 +20,9 @@ from sqlalchemy.orm import Session
 from ..auth import create_access_token, get_current_user, hash_password, verify_password
 from ..database import get_db
 from ..models import Membership, Organization, User
-from ..schemas import LoginRequest, MembershipOut, NewToken, PasswordChange, TokenResponse, UserOut
+from ..schemas import (
+    ContactUpdate, LoginRequest, MembershipOut, NewToken, PasswordChange, TokenResponse, UserOut,
+)
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
@@ -115,6 +118,36 @@ def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
             for m, org in memberships
         ],
     )
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_TG_CHAT_RE = re.compile(r"^@?[A-Za-z0-9_]{3,64}$")
+
+
+@router.patch("/me", response_model=UserOut)
+def update_contacts(
+    body: ContactUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Свои контакты для внешних уведомлений (бета): email и Telegram chat_id.
+
+    chat_id — числовой идентификатор чата (узнать: написать боту, затем
+    @userinfobot) или @username. Пустая строка очищает канал.
+    """
+    if body.email is not None:
+        email = body.email.strip()
+        if email and not _EMAIL_RE.match(email):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid email address")
+        user.email = email or None
+    if body.telegram_chat_id is not None:
+        tg = body.telegram_chat_id.strip()
+        if tg and not _TG_CHAT_RE.match(tg):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid Telegram chat id")
+        user.telegram_chat_id = tg or None
+    db.commit()
+    db.refresh(user)
+    return UserOut.model_validate(user)
 
 
 @router.post("/change-password", response_model=NewToken)

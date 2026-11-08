@@ -77,7 +77,7 @@ cd backend
 python -m venv .venv
 .venv/Scripts/pip install -r requirements.txt      # Linux/macOS: .venv/bin/pip
 .venv/Scripts/python -m uvicorn app.main:app --port 8000
-.venv/Scripts/python -m pytest tests/ -q           # 70 тестов: §12 + QA/TMX/конкорданс/CJK + леверидж + LQA/TBX/комментарии + биллинг/история/отчеты + локи/RX-QA + обратная связь
+.venv/Scripts/python -m pytest tests/ -q           # 88 тестов: §12 + QA/TMX/конкорданс/CJK + леверидж + LQA/TBX/комментарии + биллинг/история/отчеты + локи/RX-QA + обратная связь + псевдо-перевод/хендофф/выравнивание/внешние уведомления
 ```
 Swagger: http://localhost:8000/docs. Первый запуск создает БД и демо-данные:
 - организация **Demo Org**, пользователи `admin/admin123` (org admin),
@@ -90,7 +90,9 @@ Env-переменные: `TMS_SECRET_KEY`, `TMS_DATABASE_URL`, `TMS_DATA_DIR`,
 `TMS_MT_PROVIDER` (`none|libretranslate|mock`), `TMS_MT_URL`, `TMS_MT_API_KEY`,
 `TMS_FUZZY_MIN_SCORE`, `TMS_ANALYSIS_*` (веса котировки), `TMS_LQA_*`
 (штрафы minor/major/critical и порог приемки LQA-оценки), `TMS_RATE_CURRENCY`
-(валюта новых прайс-листов по умолчанию).
+(валюта новых прайс-листов по умолчанию), `TMS_SEGMENT_LOCK_TTL` (TTL лока),
+`TMS_QA_REGEX_MAX_PATTERN`; внешние уведомления (бета): `TMS_SMTP_HOST/PORT/`
+`USER/PASSWORD/FROM/STARTTLS`, `TMS_TG_BOT_TOKEN`.
 
 ### 2. Веб-клиент
 ```bash
@@ -170,7 +172,12 @@ Nginx Proxy Manager из Portainer; не забудьте проксироват
 | GET | /api/tm/tms/{id}/export · /api/tm/tms/{id}/export-csv · /api/tb/tbs/{id}/export · /api/tb/tbs/{id}/export-tbx | pm/admin | экспорт TM → TMX 1.4b и CSV, TB → CSV и TB → TBX-Basic (кругооборот с импортом) |
 | GET/POST | /api/notifications… | — | центр уведомлений |
 | GET/POST/PATCH/DELETE | /api/qa-rules[/{id}] | get: все; change: pm/admin | RX-проверки QA: правила организации на регулярных выражениях (сторона source/target, must match / must not match, warning/error, регистр, вкл/выкл); POST /api/qa-rules/test — прогон паттерна по образцу для предпросмотра |
-| POST/GET | /api/feedback | post: все; get: pm/admin | обратная связь из UI (кнопка «💬 Feedback»): тип + текст + страница, где нажали; анти-спам 429 по лимиту в час |
+| GET/POST | /api/feedback | post: все; get: pm/admin | обратная связь из UI (кнопка «💬 Feedback»): тип + текст + страница, где нажали; анти-спам 429 по лимиту в час |
+| POST | /api/jobs/{id}/pseudo-translate | исполнитель/pm | псевдо-перевод: заполнить сегменты синтетикой (теги/числа/плейсхолдеры сохраняются) для проверки экспорт-пайплайна до перевода; overwrite — и непустые |
+| GET | /api/jobs/{id}/export-xliff | участник/pm | хендофф-пакет XLIFF 1.2 для внешнего CAT-инструмента (source + текущий target + state) |
+| POST | /api/jobs/{id}/import-xliff | исполнитель/pm | влить возвращенный XLIFF: state translated/final — подтверждение (TM + автопропагация), прочее — черновики; чужие локи сегментов пропускаются |
+| POST | /api/tm/tms/{id}/align · align/confirm | pm/admin | выравнивание параллельных файлов (txt/docx): предложение пар по якорям (числа/имена) и подтверждение выбранных пар в TM (upsert) |
+| PATCH | /api/me | все | свои контакты для внешних уведомлений: email и/или Telegram chat_id |
 | WS | /ws/updates?token=&org_id= | — | события: segment_updated, segment_locked/unlocked, note_added, lqa_error_*, job_*, notification |
 
 ## Матрица соответствия ТЗ
@@ -272,6 +279,39 @@ Nginx Proxy Manager из Portainer; не забудьте проксироват
   QA Rules с созданием, вкл/выкл, удалением и предпросмотром «Test pattern»
   (прогон по образцу текста); нарушение попадает в QA-отчет с кодом
   `regex_rule` и переходом к сегменту.
+- **Хоткеи редактора** (стандарт CAT): `Ctrl+Enter` — подтвердить и вниз,
+  `Ctrl/Alt+↑↓` — навигация по сегментам, `Alt+T` — копировать исходник в
+  перевод, `Ctrl+S` — сохранить черновик немедленно; работают при фокусе в
+  любом месте страницы (кроме чужих полей ввода), не только в поле перевода.
+- **Псевдо-перевод (pseudolocalization)**: сегменты заполняются синтетикой —
+  диакритика + удлиннение ~40% + маркерные скобки, теги/числа/плейсхолдеры
+  сохраняются; экспорт и QA на таком тексте проверяют всю цепочку (теги,
+  числа, верстку длинных строк) до старта перевода. По умолчанию заполняются
+  только пустые сегменты (консервативно, как пред-перевод), режим Overwrite —
+  полный прогон; кнопка Pseudo-fill… в редакторе.
+- **XLIFF-хендофф для внешних переводчиков**: экспорт задания в XLIFF 1.2
+  (id = позиция сегмента; inline-теги становятся родными x/bpt/ept), файл
+  открывается в Trados/memoQ/OmegaT; возврат мержится в то же задание: target
+  с state translated/signed-off/final (или approved) подтверждается как
+  ручной Confirm (запись в TM use_for_write + автопропагация повторов), прочие
+  — черновики; сопоставление по id, фолбэк — по тексту исходника; чужие
+  свежие локи сегментов уважаются (skip); история правок фиксирует импорт.
+  Веб-редактор: кнопки «XLIFF handoff» / «Import XLIFF».
+- **Выравнивание параллельных файлов → TM** (alignment, практика Trados
+  Align Documents / memoQ): пара «старый исходник + старый перевод» (txt —
+  строки, docx — абзацы) выравнивается по якорям — числам и именам собственным
+  (лексика разных языков не совпадает, а якоря переживают перевод);
+  difflib-блоки отображаются в индексы единиц, скор пары = совпавшие якоря /
+  max(якорей). Предложение не пишет в TM: человек подтверждает пары галочками
+  (в вебе — модалка Align files… на странице TM), запись — upsert, как у
+  импорта. Пропущенный в переводе абзац не склеивается с соседним; совсем без
+  якорей и при равном числе единиц — слабая позиционная гипотеза (score 0).
+- **Внешние уведомления (бета)**: «действенные» события (назначение, сдача,
+  возврат, отмена, просрочка) дублируются по email (SMTP, STARTTLS) и/или
+  Telegram-боту; каналы включает администратор env-переменными, контакты
+  пользователи задают себе сами (PATCH /api/me, форма на странице уведомлений;
+  chat_id — у @userinfobot после /start боту). Доставка best-effort в фоновом
+  потоке: сбой внешнего сервиса не ломает работу с заданиями.
 
 ## Осознанные ограничения MVP (отклонения/отложено)
 

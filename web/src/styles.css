@@ -923,3 +923,49 @@ textarea {
 .feedback-page-link {
   font-size: 12px;
 }
+
+/* --- Выравнивание параллельных файлов -> TM --- */
+
+.align-modal {
+  width: 720px;
+}
+
+.align-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  max-height: 46vh;
+  overflow: auto;
+}
+
+.align-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.align-score {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  min-width: 38px;
+  text-align: right;
+}
+
+.align-score.good {
+  color: var(--green);
+}
+
+.align-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  word-break: break-word;
+}
