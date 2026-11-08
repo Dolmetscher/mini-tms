@@ -172,6 +172,36 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Страница списка: элементы + X-Total-Count (пагинация больших ресурсов). */
+export interface Page<T> {
+  items: T[];
+  total: number;
+}
+
+async function requestPage<T>(path: string): Promise<Page<T>> {
+  const headers = new Headers();
+  if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
+  if (activeOrgId) headers.set('X-Org-Id', String(activeOrgId));
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { headers });
+  } catch {
+    throw new ApiError(0, 'No connection');
+  }
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      if (typeof body === 'object' && body && 'detail' in body) detail = String((body as { detail: unknown }).detail);
+    } catch {
+      // тело не JSON
+    }
+    throw new ApiError(res.status, detail);
+  }
+  const items = (await res.json()) as T[];
+  return { items, total: Number(res.headers.get('X-Total-Count') ?? items.length) };
+}
+
 function q(params: Record<string, string | number | boolean | undefined>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -277,8 +307,8 @@ export const api = {
   tms: () => request<TMInfo[]>('/api/tm/tms'),
   createTM: (body: { name: string; source_lang: string; target_lang: string }) =>
     request<TMInfo>('/api/tm/tms', { method: 'POST', body: JSON.stringify(body) }),
-  tmEntries: (tmId: number, search?: string) =>
-    request<TMEntry[]>(`/api/tm/tms/${tmId}/entries${q({ q: search })}`),
+  tmEntries: (tmId: number, search?: string, offset?: number, limit?: number) =>
+    requestPage<TMEntry>(`/api/tm/tms/${tmId}/entries${q({ q: search, offset, limit })}`),
   upsertTMEntry: (tmId: number, body: { source_text: string; target_text: string }) =>
     request<TMEntry>(`/api/tm/tms/${tmId}/entries`, { method: 'POST', body: JSON.stringify(body) }),
   updateTMEntry: (tmId: number, entryId: number, target_text: string) =>
@@ -290,11 +320,16 @@ export const api = {
     fd.append('file', file);
     return request<{ added: number; updated: number; skipped: number }>(`/api/tm/tms/${tmId}/import-tmx`, { method: 'POST', body: fd });
   },
+  importTM: (tmId: number, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return request<{ added: number; updated: number; skipped: number }>(`/api/tm/tms/${tmId}/import-csv`, { method: 'POST', body: fd });
+  },
   tbs: () => request<TBInfo[]>('/api/tb/tbs'),
   createTB: (body: { name: string; source_lang: string; target_lang: string }) =>
     request<TBInfo>('/api/tb/tbs', { method: 'POST', body: JSON.stringify(body) }),
-  tbEntries: (tbId: number, search?: string) =>
-    request<TBEntry[]>(`/api/tb/tbs/${tbId}/entries${q({ q: search })}`),
+  tbEntries: (tbId: number, search?: string, offset?: number, limit?: number) =>
+    requestPage<TBEntry>(`/api/tb/tbs/${tbId}/entries${q({ q: search, offset, limit })}`),
   addTBEntry: (tbId: number, body: { term: string; translation: string; note?: string; status?: string }) =>
     request<TBEntry>(`/api/tb/tbs/${tbId}/entries`, { method: 'POST', body: JSON.stringify(body) }),
   updateTBEntry: (tbId: number, entryId: number, body: { term?: string; translation?: string; note?: string; status?: string }) =>

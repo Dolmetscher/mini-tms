@@ -9,6 +9,7 @@ backend/data/
 # Node
 **/node_modules/
 web/dist/
+web/tsconfig.tsbuildinfo
 mobile/dist/
 
 # Mobile (генерируется `npx expo prebuild`; локальные пути в local.properties)

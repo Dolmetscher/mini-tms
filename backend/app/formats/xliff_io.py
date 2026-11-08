@@ -1,5 +1,8 @@
 """XLIFF 1.2 (профиль MVP): каждый <trans-unit> = сегмент.
 
+Автоматически распознает версию по атрибуту version корня: файлы 2.0
+перенаправляются в xliff2_io. Здесь — логика 1.2.
+
 Namespace-агностичный разбор: файлы с xmlns и без него обрабатываются одинаково.
 
 Inline-элементы исходника нормализуются в токены сегмента:
@@ -16,8 +19,19 @@ from copy import deepcopy
 
 from lxml import etree
 
+from . import xliff2_io
+
 _TOKEN_RE = re.compile(r'(<x id="[^"]+"\s*/>|<g id="[^"]+">|</g>)')
 _TOKEN_ID_RE = re.compile(r'id="([^"]+)"')
+
+
+def _is_version_2(content: bytes) -> bool:
+    """XLIFF 2.0? Атрибут version обязателен в обоих стандартах."""
+    try:
+        root = etree.parse(io.BytesIO(content)).getroot()
+    except etree.XMLSyntaxError:
+        return False
+    return (root.get("version") or "").startswith("2")
 
 
 def _local(tag) -> str:
@@ -87,6 +101,8 @@ def _pick(first, second):
 
 
 def load_segments(content: bytes) -> tuple[list[str], list[str]]:
+    if _is_version_2(content):
+        return xliff2_io.load_segments(content)
     tree = etree.parse(io.BytesIO(content))
     root = tree.getroot()
     notes: list[str] = []
@@ -108,6 +124,8 @@ def load_segments(content: bytes) -> tuple[list[str], list[str]]:
 
 
 def export_file(original: bytes, targets: list[str]) -> bytes:
+    if _is_version_2(original):
+        return xliff2_io.export_file(original, targets)
     tree = etree.parse(io.BytesIO(original))
     root = tree.getroot()
     units = [

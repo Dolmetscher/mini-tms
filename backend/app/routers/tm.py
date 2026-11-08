@@ -1,3 +1,5 @@
+import csv
+import io
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -53,8 +55,10 @@ def create_tm(body: schemas.TMCreate, ctx: Context = Depends(get_context)):
 @router.get("/tms/{tm_id}/entries", response_model=list[schemas.TMEntryOut])
 def list_entries(
     tm_id: int,
+    response: Response,
     q: str | None = None,
     limit: int = Query(default=100, le=500),
+    offset: int = Query(default=0, ge=0),
     ctx: Context = Depends(get_context),
 ):
     ctx.require_role("admin", "pm")
@@ -65,7 +69,8 @@ def list_entries(
         entries = [e for e in query.all() if needle in normalize(e.source_text)]
     else:
         entries = query.all()
-    return entries[:limit]
+    response.headers["X-Total-Count"] = str(len(entries))
+    return entries[offset : offset + limit]
 
 
 @router.post("/tms/{tm_id}/entries", response_model=schemas.TMEntryOut, status_code=status.HTTP_201_CREATED)
@@ -106,6 +111,10 @@ def import_tmx(tm_id: int, file: UploadFile = File(...), ctx: Context = Depends(
         return "".join(seg.itertext()).strip() if seg is not None else ""
 
     added = updated = skipped = 0
+    # autoflush у сессии выключен: записи, добавленные в этой транзакции,
+    # не видны последующим SELECT — дубль source внутри одного файла
+    # отслеживаем в памяти, иначе INSERT упадет по UNIQUE (tm_id, source_text).
+    seen: dict[str, models.TMEntry] = {}
     for tu in tree.getroot().iter("tu"):
         tuvs = tu.findall("tuv")
         source_tuv = target_tuv = None
@@ -119,18 +128,69 @@ def import_tmx(tm_id: int, file: UploadFile = File(...), ctx: Context = Depends(
         if not source_text or not target_text:
             skipped += 1
             continue
-        entry = (
+        entry = seen.get(source_text) or (
             ctx.db.query(models.TMEntry)
             .filter(models.TMEntry.tm_id == tm.id, models.TMEntry.source_text == source_text)
             .first()
         )
         if entry is None:
-            ctx.db.add(models.TMEntry(tm_id=tm.id, source_text=source_text, target_text=target_text))
+            entry = models.TMEntry(tm_id=tm.id, source_text=source_text, target_text=target_text)
+            ctx.db.add(entry)
             added += 1
         else:
             entry.target_text = target_text
             updated += 1
+        seen[source_text] = entry
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tm.import_tmx", "tm", tm.id,
+                {"added": added, "updated": updated, "skipped": skipped})
+    ctx.db.commit()
+    return {"added": added, "updated": updated, "skipped": skipped}
+
+
+@router.post("/tms/{tm_id}/import-csv", status_code=status.HTTP_200_OK)
+def import_csv(tm_id: int, file: UploadFile = File(...), ctx: Context = Depends(get_context)):
+    """Импорт CSV (FR-12, паритет с TB): заголовок source,target.
+
+    Семантика — как у TMX-импорта и upsert: source — ключ памяти,
+    совпадения обновляют перевод.
+    """
+    ctx.require_role("admin", "pm")
+    tm = _tm_or_404(ctx, tm_id)
+    try:
+        raw = file.file.read().decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"CSV must be UTF-8: {exc}")
+    reader = csv.DictReader(io.StringIO(raw))
+    # Заголовок в любом регистре (Source/Target/...) — как в import-csv у TB
+    field_map = {(f or "").strip().lower(): f for f in (reader.fieldnames or [])}
+    if "source" not in field_map or "target" not in field_map:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="CSV template: header row with columns source,target",
+        )
+
+    added = updated = skipped = 0
+    seen: dict[str, models.TMEntry] = {}  # дубль source внутри файла — см. import-tmx
+    for row in reader:
+        source_text = ((row.get(field_map["source"]) or "").strip())
+        target_text = ((row.get(field_map["target"]) or "").strip())
+        if not source_text or not target_text:
+            skipped += 1
+            continue
+        entry = seen.get(source_text) or (
+            ctx.db.query(models.TMEntry)
+            .filter(models.TMEntry.tm_id == tm.id, models.TMEntry.source_text == source_text)
+            .first()
+        )
+        if entry is None:
+            entry = models.TMEntry(tm_id=tm.id, source_text=source_text, target_text=target_text)
+            ctx.db.add(entry)
+            added += 1
+        else:
+            entry.target_text = target_text
+            updated += 1
+        seen[source_text] = entry
+    audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tm.import_csv", "tm", tm.id,
                 {"added": added, "updated": updated, "skipped": skipped})
     ctx.db.commit()
     return {"added": added, "updated": updated, "skipped": skipped}

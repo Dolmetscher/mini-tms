@@ -52,8 +52,10 @@ def create_tb(body: schemas.TBCreate, ctx: Context = Depends(get_context)):
 @router.get("/tbs/{tb_id}/entries", response_model=list[schemas.TBEntryOut])
 def list_entries(
     tb_id: int,
+    response: Response,
     q: str | None = None,
     limit: int = Query(default=100, le=500),
+    offset: int = Query(default=0, ge=0),
     ctx: Context = Depends(get_context),
 ):
     ctx.require_role("admin", "pm")
@@ -63,7 +65,8 @@ def list_entries(
     if q:
         needle = q.casefold()
         entries = [e for e in entries if needle in e.term.casefold() or needle in e.translation.casefold()]
-    return entries[:limit]
+    response.headers["X-Total-Count"] = str(len(entries))
+    return entries[offset : offset + limit]
 
 
 @router.post("/tbs/{tb_id}/entries", response_model=schemas.TBEntryOut, status_code=status.HTTP_201_CREATED)

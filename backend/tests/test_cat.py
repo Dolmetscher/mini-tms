@@ -412,6 +412,84 @@ def test_xliff_tags_roundtrip(client, pm, ann):
     assert any((c.text or "") == "[b]" for c in target2 if local(c) == "bpt")
 
 
+XLIFF2_DOC = b"""<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:2.0" version="2.0" srcLang="en" trgLang="ru">
+ <file id="f1">
+  <unit id="u1">
+   <segment id="s1"><source>Hello <ph id="1">{name}</ph> world</source></segment>
+   <ignorable><source>&#10;</source></ignorable>
+   <segment id="s2"><source><pc id="b" type="fmt">Bold</pc> and <sc id="q"/>quoted<ec id="q"/></source></segment>
+  </unit>
+ </file>
+</xliff>"""
+
+
+def test_xliff2_roundtrip(client, pm, ann):
+    res = client.post("/api/projects", headers=pm, json={
+        "name": "Xliff2", "source_lang": "en", "target_langs": ["ru"],
+    })
+    project = res.json()["id"]
+    res = client.post(f"/api/projects/{project}/documents", headers=pm,
+                      files={"file": ("tags2.xlf", io.BytesIO(XLIFF2_DOC), "application/x-xliff+xml")})
+    assert res.status_code == 201, res.text
+    document_id = res.json()["id"]
+    assert client.get(f"/api/documents/{document_id}", headers=pm).json()["processing_status"] == "ready"
+
+    job = next(j for j in client.get(f"/api/jobs?project_id={project}", headers=pm).json())
+    members = client.get(f"/api/orgs/{ORG}/members", headers=pm).json()
+    ann_id = next(m["user"]["id"] for m in members if m["user"]["username"] == "ann")
+    client.post(f"/api/jobs/{job['id']}/assign", headers=pm, json={"assignee_id": ann_id})
+    client.post(f"/api/jobs/{job['id']}/accept", headers=ann)
+    detail = client.get(f"/api/jobs/{job['id']}", headers=ann).json()
+    seg1, seg2 = detail["segments"]
+    # ignorable не стал сегментом: ровно два
+    assert len(detail["segments"]) == 2
+    assert '<x id="1"/>' in seg1["source_text"]
+    # и pc, и изолированная пара sc/ec -> g-токены
+    assert '<g id="b">' in seg2["source_text"] and "</g>" in seg2["source_text"]
+    assert seg2["source_text"].count("</g>") == 2
+
+    client.patch(f"/api/segments/{seg1['id']}", headers=ann,
+                 json={"target_text": 'Привет <x id="1"/> мир', "confirmed": True})
+    client.patch(f"/api/segments/{seg2['id']}", headers=ann,
+                 json={"target_text": '<g id="b">Жирный</g> и <g id="q">в кавычках</g>', "confirmed": True})
+    assert client.post(f"/api/jobs/{job['id']}/submit", headers=ann).status_code == 200
+
+    res = client.get(f"/api/jobs/{job['id']}/export", headers=pm)
+    assert res.status_code == 200
+    tree = etree.fromstring(res.content)
+
+    def local(el):
+        return etree.QName(el).localname if isinstance(el.tag, str) else ""
+
+    # версия и namespace сохранены
+    assert tree.get("version") == "2.0"
+    assert etree.QName(tree).namespace == "urn:oasis:names:tc:xliff:document:2.0"
+
+    segs = [el for el in tree.iter() if local(el) == "segment"]
+    assert len(segs) == 2
+    t1, t2 = (next(c for c in s if local(c) == "target") for s in segs)
+
+    # ph восстановлен с native-кодом из исходника
+    ph = next(c for c in t1 if local(c) == "ph")
+    assert ph.get("id") == "1" and ph.text == "{name}"
+    assert t1.text == "Привет " and ph.tail == " мир"
+
+    # pc: атрибуты оригинала + перевод внутри; после него текст
+    pc = next(c for c in t2 if local(c) == "pc")
+    assert pc.get("id") == "b" and pc.get("type") == "fmt"
+    assert pc.text == "Жирный" and pc.tail == " и "
+    # изолированная пара sc/ec с переводом между
+    sc = next(c for c in t2 if local(c) == "sc")
+    ec = next(c for c in t2 if local(c) == "ec")
+    assert sc.get("id") == "q" and ec.get("id") == "q"
+    assert sc.tail == "в кавычках" and (ec.tail or "") == ""
+
+    # ignorable не тронут
+    ignorable = [el for el in tree.iter() if local(el) == "ignorable"]
+    assert ignorable and not any(local(c) == "target" for c in ignorable[0])
+
+
 def test_docx_roundtrip(client, pm, ann):
     from docx import Document as make_docx
 

@@ -4,6 +4,7 @@
 должны правиться/удаляться на месте — иначе ресурс работает против
 качества. Права — менеджмент (pm/admin); переводчик читает через проект.
 """
+import io
 import os
 import tempfile
 
@@ -162,3 +163,108 @@ def test_tb_entry_update_and_delete(client, pm, ann):
     assert client.delete(f"/api/tb/tbs/{tb_id}/entries/{second['id']}", headers=pm).status_code == 404
     entries = client.get(f"/api/tb/tbs/{tb_id}/entries", headers=pm).json()
     assert all(e["id"] != second["id"] for e in entries)
+
+
+# --- CSV-импорт TM (паритет с TB) и пагинация записей ---
+
+
+def test_tm_import_csv_and_pagination(client, pm):
+    res = client.post("/api/tm/tms", headers=pm, json={
+        "name": "CSV TM", "source_lang": "en", "target_lang": "de",
+    })
+    tm_id = res.json()["id"] if res.status_code == 201 else next(
+        t["id"] for t in client.get("/api/tm/tms", headers=pm).json() if t["name"] == "CSV TM"
+    )
+
+    # Шаблон source,target; заголовок в смешанном регистре принимается;
+    # строка с пустым переводом skip-ается; дубль source — обновление.
+    csv_data = (
+        "Source,Target\n"
+        "Press the button.,Drücken Sie die Taste.\n"
+        "Broken row,\n"
+        "Press the button.,Druecken Sie die Taste. (v2)\n"
+        "Close the door.,Schließen Sie die Tür.\n"
+        "Open the window.,Öffnen Sie das Fenster.\n"
+    ).encode("utf-8")
+    res = client.post(f"/api/tm/tms/{tm_id}/import-csv", headers=pm,
+                      files={"file": ("tm.csv", io.BytesIO(csv_data), "text/csv")})
+    assert res.status_code == 200, res.text
+    assert res.json() == {"added": 3, "updated": 1, "skipped": 1}, res.json()
+
+    # upsert: дубль обновил перевод, а не создал вторую запись
+    res = client.get(f"/api/tm/tms/{tm_id}/entries", headers=pm, params={"q": "Press the button"})
+    entries = res.json()
+    assert len(entries) == 1
+    assert entries[0]["target_text"] == "Druecken Sie die Taste. (v2)"
+
+    # неверный шаблон — 422
+    res = client.post(f"/api/tm/tms/{tm_id}/import-csv", headers=pm,
+                      files={"file": ("bad.csv", io.BytesIO(b"foo,bar\nx,y\n"), "text/csv")})
+    assert res.status_code == 422
+
+    # пагинация: X-Total-Count + offset/limit
+    res = client.get(f"/api/tm/tms/{tm_id}/entries", headers=pm,
+                     params={"limit": 2, "offset": 0})
+    assert res.status_code == 200
+    assert res.headers["X-Total-Count"] == "3"
+    page1 = res.json()
+    assert len(page1) == 2
+    res = client.get(f"/api/tm/tms/{tm_id}/entries", headers=pm,
+                     params={"limit": 2, "offset": 2})
+    page2 = res.json()
+    assert len(page2) == 1
+    # страницы не пересекаются и покрывают всё
+    ids = [e["id"] for e in page1 + page2]
+    assert len(set(ids)) == 3
+    all_entries = client.get(f"/api/tm/tms/{tm_id}/entries", headers=pm,
+                             params={"limit": 100}).json()
+    assert {e["id"] for e in all_entries} == set(ids)
+
+    # поиск учитывается в X-Total-Count
+    res = client.get(f"/api/tm/tms/{tm_id}/entries", headers=pm,
+                     params={"q": "door", "limit": 2})
+    assert res.headers["X-Total-Count"] == "1" and len(res.json()) == 1
+
+
+def test_tb_entries_pagination(client, pm):
+    res = client.post("/api/tb/tbs", headers=pm, json={
+        "name": "Page TB", "source_lang": "en", "target_lang": "fr",
+    })
+    tb_id = res.json()["id"] if res.status_code == 201 else next(
+        t["id"] for t in client.get("/api/tb/tbs", headers=pm).json() if t["name"] == "Page TB"
+    )
+    for i in range(5):
+        client.post(f"/api/tb/tbs/{tb_id}/entries", headers=pm, json={
+            "term": f"term {i}", "translation": f"terme {i}",
+        })
+    res = client.get(f"/api/tb/tbs/{tb_id}/entries", headers=pm, params={"limit": 3, "offset": 3})
+    assert res.headers["X-Total-Count"] == "5"
+    assert len(res.json()) == 2
+
+
+def test_tmx_import_duplicate_source_in_one_file(client, pm):
+    """Дубль source внутри одного TMX не должен ронять UNIQUE-ограничение."""
+    res = client.post("/api/tm/tms", headers=pm, json={
+        "name": "Dup TM", "source_lang": "en", "target_lang": "es",
+    })
+    tm_id = res.json()["id"] if res.status_code == 201 else next(
+        t["id"] for t in client.get("/api/tm/tms", headers=pm).json() if t["name"] == "Dup TM"
+    )
+    tmx = (
+        b'<?xml version="1.0" encoding="UTF-8"?>\n'
+        b'<tmx version="1.4"><header creationtool="t" datatype="plaintext" '
+        b'segtype="sentence" o-tmf="x" adminlang="en" srclang="en"/>'
+        b"<body>"
+        b'<tu><tuv xml:lang="en"><seg>Save the file.</seg></tuv>'
+        b'<tuv xml:lang="es"><seg>Guarde el archivo.</seg></tuv></tu>'
+        b'<tu><tuv xml:lang="en"><seg>Save the file.</seg></tuv>'
+        b'<tuv xml:lang="es"><seg>Guarde el fichero. (v2)</seg></tuv></tu>'
+        b"</body></tmx>"
+    )
+    res = client.post(f"/api/tm/tms/{tm_id}/import-tmx", headers=pm,
+                      files={"file": ("dup.tmx", io.BytesIO(tmx), "application/x-tmx+xml")})
+    assert res.status_code == 200, res.text
+    assert res.json() == {"added": 1, "updated": 1, "skipped": 0}, res.json()
+    entries = client.get(f"/api/tm/tms/{tm_id}/entries", headers=pm).json()
+    assert len(entries) == 1
+    assert entries[0]["target_text"] == "Guarde el fichero. (v2)"

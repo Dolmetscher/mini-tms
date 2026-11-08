@@ -4,6 +4,8 @@ import type { TBEntry, TBInfo, TMEntry, TMInfo } from '../api/types';
 
 type Tab = 'tm' | 'tb';
 
+const PAGE = 100; // размер страницы записей (бэкенд ограничивает limit≤500)
+
 interface TmEdit { id: number; target: string; }
 interface TbEdit { id: number; term: string; translation: string; note: string; status: string; }
 
@@ -15,6 +17,8 @@ export default function ResourcesPage() {
   const [selectedTb, setSelectedTb] = useState<number | null>(null);
   const [tmEntries, setTmEntries] = useState<TMEntry[]>([]);
   const [tbEntries, setTbEntries] = useState<TBEntry[]>([]);
+  const [tmTotal, setTmTotal] = useState(0);
+  const [tbTotal, setTbTotal] = useState(0);
   const [error, setError] = useState('');
   // правка записи в строке таблицы (maintenance)
   const [editTm, setEditTm] = useState<TmEdit | null>(null);
@@ -43,10 +47,14 @@ export default function ResourcesPage() {
 
   const loadEntries = useCallback(() => {
     if (tab === 'tm' && selectedTm) {
-      api.tmEntries(selectedTm, search || undefined).then(setTmEntries).catch(() => setTmEntries([]));
+      api.tmEntries(selectedTm, search || undefined, 0, PAGE)
+        .then((p) => { setTmEntries(p.items); setTmTotal(p.total); })
+        .catch(() => { setTmEntries([]); setTmTotal(0); });
     }
     if (tab === 'tb' && selectedTb) {
-      api.tbEntries(selectedTb, search || undefined).then(setTbEntries).catch(() => setTbEntries([]));
+      api.tbEntries(selectedTb, search || undefined, 0, PAGE)
+        .then((p) => { setTbEntries(p.items); setTbTotal(p.total); })
+        .catch(() => { setTbEntries([]); setTbTotal(0); });
     }
   }, [tab, selectedTm, selectedTb, search]);
 
@@ -97,6 +105,20 @@ export default function ResourcesPage() {
     });
   };
 
+  const loadMoreTm = () => {
+    if (!selectedTm) return;
+    api.tmEntries(selectedTm, search || undefined, tmEntries.length, PAGE)
+      .then((p) => setTmEntries((prev) => [...prev, ...p.items]))
+      .catch(() => undefined);
+  };
+
+  const loadMoreTb = () => {
+    if (!selectedTb) return;
+    api.tbEntries(selectedTb, search || undefined, tbEntries.length, PAGE)
+      .then((p) => setTbEntries((prev) => [...prev, ...p.items]))
+      .catch(() => undefined);
+  };
+
   const exportTm = (tmId: number) => {
     void act(async () => downloadTmExport(tmId));
   };
@@ -139,6 +161,16 @@ export default function ResourcesPage() {
                          onChange={(e) => {
                            const f = e.target.files?.[0];
                            if (f && selectedTm) void act(() => api.importTMX(selectedTm, f));
+                           if (e.target) e.target.value = '';
+                         }} />
+                </label>
+                <label className="btn small" style={{ cursor: 'pointer' }}
+                       title="CSV: заголовок source,target — паритет с импортом глоссариев">
+                  Import CSV…
+                  <input type="file" accept=".csv,text/csv" hidden
+                         onChange={(e) => {
+                           const f = e.target.files?.[0];
+                           if (f && selectedTm) void act(() => api.importTM(selectedTm, f));
                            if (e.target) e.target.value = '';
                          }} />
                 </label>
@@ -205,6 +237,11 @@ export default function ResourcesPage() {
                     </tr>
                   ))}
                   {tmEntries.length === 0 && <tr><td colSpan={3} className="muted center">No entries.</td></tr>}
+                  {tmEntries.length > 0 && tmEntries.length < tmTotal && (
+                    <tr><td colSpan={3} className="center">
+                      <button className="btn small" onClick={loadMoreTm}>Load more ({tmEntries.length} of {tmTotal})</button>
+                    </td></tr>
+                  )}
                 </tbody>
               </table>
             </section>
@@ -331,6 +368,11 @@ export default function ResourcesPage() {
                     </tr>
                   ))}
                   {tbEntries.length === 0 && <tr><td colSpan={5} className="muted center">No entries.</td></tr>}
+                  {tbEntries.length > 0 && tbEntries.length < tbTotal && (
+                    <tr><td colSpan={5} className="center">
+                      <button className="btn small" onClick={loadMoreTb}>Load more ({tbEntries.length} of {tbTotal})</button>
+                    </td></tr>
+                  )}
                 </tbody>
               </table>
             </section>
