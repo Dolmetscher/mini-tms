@@ -205,6 +205,25 @@ class JobDetail(JobOut):
     rework_comment: str
     decline_reason: str
     segments: list[SegmentOut]
+    # Свежие локи сегментов («кто редактирует — тот блокирует»).
+    locks: list["SegmentLockInfo"] = []
+
+
+class SegmentLockInfo(BaseModel):
+    """Кто сейчас держит сегмент (для индикатора занятости в редакторе)."""
+
+    segment_id: int
+    user: UserRef
+    locked_at: datetime
+
+
+class SegmentLockOut(BaseModel):
+    """Ответ на захват/продление лока: владелец и TTL (сек) для heartbeat."""
+
+    segment_id: int
+    locked_by: UserRef
+    locked_at: datetime
+    ttl_seconds: int
 
 
 class AssignRequest(BaseModel):
@@ -227,6 +246,15 @@ class SegmentUpdate(BaseModel):
     base_updated_at: Optional[datetime] = None
 
 
+class LockConflict(BaseModel):
+    """Тело 423: кто держит сегмент и когда лок истечет по TTL."""
+
+    message: str
+    locked_by: UserRef
+    locked_at: datetime
+    ttl_seconds: int
+
+
 class QAItem(BaseModel):
     segment_id: int
     position: int
@@ -240,6 +268,52 @@ class QAReport(BaseModel):
     blocking_count: int
     warning_count: int
     items: list[QAItem]
+
+
+# --- RX-проверки QA: правила на регулярных выражениях ---
+
+RegexSide = Literal["source", "target"]
+RegexSeverity = Literal["warning", "error"]
+
+
+class QaRegexRuleCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    pattern: str = Field(min_length=1, max_length=500)
+    side: RegexSide = "target"
+    must_match: bool = False
+    severity: RegexSeverity = "warning"
+    case_sensitive: bool = False
+    enabled: bool = True
+    description: str = Field(default="", max_length=2000)
+
+
+class QaRegexRuleUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    pattern: Optional[str] = Field(default=None, min_length=1, max_length=500)
+    side: Optional[RegexSide] = None
+    must_match: Optional[bool] = None
+    severity: Optional[RegexSeverity] = None
+    case_sensitive: Optional[bool] = None
+    enabled: Optional[bool] = None
+    description: Optional[str] = Field(default=None, max_length=2000)
+
+
+class QaRegexRuleOut(QaRegexRuleCreate):
+    id: int
+    created_at: datetime
+
+
+class QaRegexTestRequest(BaseModel):
+    """Прогон паттерна по образцу текста — предпросмотр правила в UI."""
+
+    pattern: str = Field(min_length=1, max_length=500)
+    case_sensitive: bool = False
+    text: str = Field(min_length=1, max_length=10000)
+
+
+class QaRegexTestResult(BaseModel):
+    matches: list[str]
+    error: Optional[str] = None
 
 
 class MTSuggestion(BaseModel):

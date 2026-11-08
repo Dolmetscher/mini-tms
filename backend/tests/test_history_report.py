@@ -124,7 +124,10 @@ def test_segment_history_track_changes(client, pm, ann, ivan):
     assert {h["author"]["username"] for h in history} == {"ann"}
     assert all(h["position"] == first["position"] for h in history)
 
-    # PM корректирует — третья запись от другого автора
+    # PM корректирует — третья запись от другого автора.
+    # ann «уходит с сегмента», снимая лок редактирования (кто редактирует — тот блокирует):
+    # без снятия правка pm получила бы 423, пока лок ann свежий.
+    assert client.delete(f"/api/segments/{first['id']}/lock", headers=ann).status_code == 204
     assert client.patch(f"/api/segments/{first['id']}", headers=pm,
                         json={"target_text": "PM correction"}).status_code == 200
     history = client.get(f"/api/segments/{first['id']}/history", headers=pm).json()

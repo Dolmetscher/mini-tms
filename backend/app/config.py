@@ -69,3 +69,11 @@ RATE_DEFAULTS: dict[str, float] = {
     "repetition": 0.03,
     "no_match": 0.10,
 }
+
+# Сегментные локи («кто редактирует — тот блокирует»): TTL мягкого лока.
+# Клиент продлевает лок heartbeat-ом, пока сегмент открыт; лок старше TTL
+# считается просроченным (вкладка закрылась без снятия) и перехватывается.
+SEGMENT_LOCK_TTL_SECONDS = int(os.environ.get("TMS_SEGMENT_LOCK_TTL", "600"))
+
+# RX-проверки QA: ограничение длины паттерна правила (гигиена входных данных).
+QA_REGEX_MAX_PATTERN = int(os.environ.get("TMS_QA_REGEX_MAX_PATTERN", "500"))

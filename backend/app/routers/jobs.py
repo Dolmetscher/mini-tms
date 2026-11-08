@@ -1,10 +1,10 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import config, models, schemas
 from ..deps import Context, get_context
 from ..formats import docx_io
 from ..helpers import (
@@ -16,8 +16,9 @@ from ..helpers import (
     naive_utc,
     org_member_ids,
     serialize_job,
+    utcnow,
 )
-from ..services import audit, delivery, lqa, leveraging, notify, qa
+from ..services import audit, delivery, lqa, leveraging, locks, notify, qa
 from ..services.mt import MTError, get_provider
 from ..ws import make_event, manager
 
@@ -71,7 +72,119 @@ def get_job(job_id: int, ctx: Context = Depends(get_context)):
         rework_comment=job.rework_comment,
         decline_reason=job.decline_reason,
         segments=[schemas.SegmentOut.model_validate(s) for s in job.segments],
+        locks=_job_locks(ctx.db, job),
     )
+
+
+def _job_locks(db: Session, job: models.Job) -> list[schemas.SegmentLockInfo]:
+    """Свежие (не истекшие по TTL) локи сегментов задания — одним запросом."""
+    ids = [s.id for s in job.segments]
+    if not ids:
+        return []
+    cutoff = utcnow() - timedelta(seconds=config.SEGMENT_LOCK_TTL_SECONDS)
+    rows = (
+        db.query(models.SegmentLock, models.User)
+        .join(models.User, models.SegmentLock.user_id == models.User.id)
+        .filter(models.SegmentLock.segment_id.in_(ids), models.SegmentLock.locked_at >= cutoff)
+        .all()
+    )
+    return [
+        schemas.SegmentLockInfo(
+            segment_id=lock.segment_id,
+            user=schemas.UserRef(id=user.id, username=user.username),
+            locked_at=lock.locked_at,
+        )
+        for lock, user in rows
+    ]
+
+
+def _editable_segment(ctx: Context, segment_id: int) -> models.Segment:
+    """Общие проверки прав/статуса для сохранения и захвата лока."""
+    segment = ctx.db.get(models.Segment, segment_id)
+    if segment is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found")
+    job = segment.job
+    if job.org_id != ctx.org_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found")
+    if not can_manage(ctx) and job.assignee_id != ctx.user_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Job is not assigned to you")
+    if job.status not in EDITABLE_STATUSES:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"Job status '{job.status}' does not allow editing",
+        )
+    return segment
+
+
+def _lock_conflict(other: models.SegmentLock) -> HTTPException:
+    """423 Locked: кто держит сегмент и когда лок истечет по TTL."""
+    return HTTPException(
+        status.HTTP_423_LOCKED,
+        detail=schemas.LockConflict(
+            message="Segment is being edited by another user",
+            locked_by=schemas.UserRef(id=other.user.id, username=other.user.username),
+            locked_at=other.locked_at,
+            ttl_seconds=config.SEGMENT_LOCK_TTL_SECONDS,
+        ).model_dump(mode="json"),
+    )
+
+
+@router.post("/segments/{segment_id}/lock", response_model=schemas.SegmentLockOut)
+async def lock_segment(segment_id: int, ctx: Context = Depends(get_context)):
+    """Захват/продление лока «кто редактирует — тот блокирует».
+
+    Свой лок продлевается (heartbeat), просроченный по TTL — перехватывается.
+    Чужой свежий лок -> 423 с данными владельца (UI показывает занятость,
+    не дожидаясь конфликта сохранения).
+    """
+    segment = _editable_segment(ctx, segment_id)
+    lock, other = locks.acquire(ctx.db, segment, ctx.user_id)
+    if other is not None:
+        raise _lock_conflict(other)
+    ctx.db.commit()
+    await manager.send_users(
+        org_member_ids(ctx.db, ctx.org_id),
+        make_event(
+            "segment_locked",
+            job_id=segment.job_id,
+            segment_id=segment.id,
+            user=ctx.user.username,
+            user_id=ctx.user_id,
+            locked_at=lock.locked_at.isoformat(),
+        ),
+    )
+    return schemas.SegmentLockOut(
+        segment_id=segment.id,
+        locked_by=schemas.UserRef(id=ctx.user_id, username=ctx.user.username),
+        locked_at=lock.locked_at,
+        ttl_seconds=config.SEGMENT_LOCK_TTL_SECONDS,
+    )
+
+
+@router.delete("/segments/{segment_id}/lock", status_code=status.HTTP_204_NO_CONTENT)
+async def unlock_segment(segment_id: int, ctx: Context = Depends(get_context)):
+    """Снять свой лок; менеджмент может снять чужой (ушедший в отпуск переводчик)."""
+    segment = ctx.db.get(models.Segment, segment_id)
+    if segment is None or segment.job.org_id != ctx.org_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found")
+    ensure_job_access(ctx, segment.job)
+    if not can_manage(ctx):
+        released = locks.release(ctx.db, segment.id, user_id=ctx.user_id)
+        if released is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Lock not found")
+    else:
+        locks.release(ctx.db, segment.id)
+    ctx.db.commit()
+    await manager.send_users(
+        org_member_ids(ctx.db, ctx.org_id),
+        make_event(
+            "segment_unlocked",
+            job_id=segment.job_id,
+            segment_id=segment.id,
+            user=ctx.user.username,
+        ),
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def _write_translations_to_tm(db: Session, job: models.Job, segment: models.Segment) -> None:
@@ -104,19 +217,14 @@ def _write_translations_to_tm(db: Session, job: models.Job, segment: models.Segm
 @router.patch("/segments/{segment_id}", response_model=schemas.SegmentOut)
 async def save_segment(segment_id: int, body: schemas.SegmentUpdate, ctx: Context = Depends(get_context)):
     """Сохранение сегмента: только исполнителю, только в редактируемых статусах (FR-03/FR-04)."""
-    segment = ctx.db.get(models.Segment, segment_id)
-    if segment is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found")
+    segment = _editable_segment(ctx, segment_id)
     job = segment.job
-    if job.org_id != ctx.org_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found")
-    if not can_manage(ctx) and job.assignee_id != ctx.user_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Job is not assigned to you")
-    if job.status not in EDITABLE_STATUSES:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail=f"Job status '{job.status}' does not allow editing",
-        )
+
+    # Мягкий лок: чужой свежий лок запрещает сохранение (кто редактирует — тот блокирует);
+    # свой лок продлевается — сохранение само по себе признак активного редактирования.
+    _acquired, other = locks.acquire(ctx.db, segment, ctx.user_id)
+    if other is not None:
+        raise _lock_conflict(other)
 
     # Оптимистичная блокировка: конфликт версий не решается скрытой перезаписью (FR-04).
     if body.base_updated_at is not None:
@@ -217,6 +325,7 @@ def assign_job(job_id: int, body: schemas.AssignRequest, ctx: Context = Depends(
     })
     if previous is not None and previous != body.assignee_id:
         # Переназначение: перевод сохраняется, доступ предыдущего исполнителя отзывается.
+        locks.release_job_locks(ctx.db, job)  # локи старого исполнителя не должны блокировать нового
         notify.notify(ctx.db, ctx.org_id, previous, "job_reassigned", {"job_id": job.id})
     ctx.db.commit()
     return serialize_job(ctx.db, job)
@@ -492,6 +601,7 @@ def submit_job(job_id: int, ctx: Context = Depends(get_context)):
             media_type="application/json",
         )
     job.status = "submitted"
+    locks.release_job_locks(ctx.db, job)  # редактирование закрыто — локи больше не актуальны
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "job.submit", "job", job.id, {})
     notify.notify(ctx.db, ctx.org_id, job.project.manager_id, "job_submitted", {"job_id": job.id})
     ctx.db.commit()
@@ -505,6 +615,7 @@ def complete_job(job_id: int, ctx: Context = Depends(get_context)):
     if job.status != "submitted":
         raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Cannot complete a job in status '{job.status}'")
     job.status = "completed"
+    locks.release_job_locks(ctx.db, job)
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "job.complete", "job", job.id, {})
     ctx.db.commit()
     return serialize_job(ctx.db, job)
@@ -518,6 +629,7 @@ def return_job(job_id: int, body: schemas.ReturnRequest, ctx: Context = Depends(
         raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Cannot return a job in status '{job.status}'")
     job.status = "rework"
     job.rework_comment = body.comment
+    locks.release_job_locks(ctx.db, job)  # локи ревью не должны мешать переводчику переделывать
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "job.return", "job", job.id, {"comment": body.comment})
     # Если ревьюер уже размечал ошибки LQA — переводчик получает оценку сразу
     # (контекст возврата: что именно и насколько серьезно).
@@ -539,6 +651,7 @@ def cancel_job(job_id: int, ctx: Context = Depends(get_context)):
         raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Cannot cancel a job in status '{job.status}'")
     previous_assignee = job.assignee_id
     job.status = "canceled"
+    locks.release_job_locks(ctx.db, job)
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "job.cancel", "job", job.id, {})
     notify.notify(ctx.db, ctx.org_id, previous_assignee, "job_canceled", {"job_id": job.id})
     ctx.db.commit()

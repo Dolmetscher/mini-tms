@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError, downloadBilingualExport } from '../api/client';
 import type {
-  AnalysisReport, JobDetail, MTSuggestion, QAReport, Segment, SegmentNote, SegmentRevision, TBHit, TMSuggestion, WsEvent,
+  AnalysisReport, JobDetail, LockConflictBody, MTSuggestion, QAReport, Segment, SegmentLockInfo,
+  SegmentNote, SegmentRevision, TBHit, TMSuggestion, WsEvent,
 } from '../api/types';
 import { useAuth } from '../state/AuthContext';
 import { useUpdates } from '../ws/useUpdates';
@@ -102,6 +103,9 @@ export default function EditorPage() {
   // история правок сегмента (track changes)
   const [history, setHistory] = useState<SegmentRevision[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Локи «кто редактирует — тот блокирует»: кто сейчас держит какой сегмент
+  const [locks, setLocks] = useState<SegmentLockInfo[]>([]);
+  const lockedIdRef = useRef<number | null>(null); // сегмент, лок которого держим мы
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -123,6 +127,7 @@ export default function EditorPage() {
     try {
       const data = await api.job(jobId);
       setJob(data);
+      setLocks(data.locks ?? []); // серверная истина: свежие локи задания
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load job');
@@ -160,6 +165,20 @@ export default function EditorPage() {
           setConflict({ server: err.body as Segment });
           return false;
         }
+        if (err.status === 423) {
+          // Сегмент занял другой редактор (кто редактирует — тот блокирует):
+          // черновик сохраняется локально, занятость показываем сразу.
+          const detail = (err.body as LockConflictBody | undefined)?.detail;
+          if (detail) {
+            setLocks((prev) => [
+              ...prev.filter((l) => l.segment_id !== segment.id),
+              { segment_id: segment.id, user: detail.locked_by, locked_at: detail.locked_at },
+            ]);
+            setNotice(`Segment is being edited by ${detail.locked_by.username} — read-only until they finish.`);
+          }
+          setSaveState('error');
+          return false;
+        }
         setSaveState(err.status === 0 ? 'offline' : 'error');
         if (err.status === 0) {
           localStorage.setItem(draftKey(segment.id), JSON.stringify({ text, ts: Date.now() }));
@@ -187,7 +206,45 @@ export default function EditorPage() {
     };
   }, [draft, active, saveState, persist]);
 
+  // Лок сегмента: захват/продление и снятие. Чужой свежий лок приходит в теле 423.
+  const acquireLock = useCallback(async (segmentId: number) => {
+    try {
+      const res = await api.lockSegment(segmentId);
+      lockedIdRef.current = segmentId;
+      setLocks((prev) => [
+        ...prev.filter((l) => l.segment_id !== segmentId),
+        { segment_id: segmentId, user: res.locked_by, locked_at: res.locked_at },
+      ]);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 423) {
+        const detail = (err.body as LockConflictBody | undefined)?.detail;
+        if (detail) {
+          setLocks((prev) => [
+            ...prev.filter((l) => l.segment_id !== segmentId),
+            { segment_id: segmentId, user: detail.locked_by, locked_at: detail.locked_at },
+          ]);
+        }
+      }
+    }
+  }, []);
+
+  const releaseLock = useCallback(async (segmentId: number | null | undefined) => {
+    if (!segmentId || lockedIdRef.current !== segmentId) return; // отпускаем только свой лок
+    lockedIdRef.current = null;
+    try {
+      await api.unlockSegment(segmentId);
+    } catch {
+      // связь упала — сервер снимет лок по TTL
+    }
+    setLocks((prev) => prev.filter((l) => l.segment_id !== segmentId));
+  }, []);
+
   const selectSegment = useCallback(async (seg: Segment) => {
+    // Локи: уходим с предыдущего сегмента — снимаем; новый занимаем,
+    // если задание редактируемо (кто редактирует — тот блокирует)
+    const previousId = activeRef.current?.id ?? null;
+    if (previousId !== seg.id) void releaseLock(previousId);
+    if (job && EDITABLE.includes(job.status)) void acquireLock(seg.id);
     setActiveId(seg.id);
     setSaveState('saved');
     setUndoStack([]);
@@ -224,7 +281,27 @@ export default function EditorPage() {
         if (list.length) setNotedIds((prev) => new Set(prev).add(seg.id));
       })
       .catch(() => setNotes([]));
-  }, [job]);
+  }, [job, acquireLock, releaseLock]);
+
+  // Heartbeat лока: пока открыт редактируемый сегмент, продлеваем свой лок
+  // (TTL на сервере — 10 мин; вкладка, умершая без снятия, освобождает сегмент)
+  const canEditJob = job ? EDITABLE.includes(job.status) : false;
+  useEffect(() => {
+    if (!activeId || !canEditJob) return;
+    const timer = setInterval(() => {
+      if (lockedIdRef.current === activeId) void acquireLock(activeId);
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [activeId, canEditJob, acquireLock]);
+
+  // Уход со страницы: снимаем свой лок (best-effort; TTL подстрахует)
+  useEffect(() => {
+    return () => {
+      const sid = lockedIdRef.current;
+      lockedIdRef.current = null;
+      if (sid) void api.unlockSegment(sid).catch(() => undefined);
+    };
+  }, []);
 
   const toggleHistory = async () => {
     if (!active) return;
@@ -273,6 +350,24 @@ export default function EditorPage() {
           author: { id: -1, username: user }, body, created_at: new Date().toISOString(),
         }]);
       }
+    } else if (event.type === 'segment_locked' && event.job_id === jobId) {
+      // Чужой (или свой эхо-) лок — показываем занятость сразу, без перезапроса
+      const sid = event.segment_id as number;
+      setLocks((prev) => [
+        ...prev.filter((l) => l.segment_id !== sid),
+        {
+          segment_id: sid,
+          user: { id: (event.user_id as number) ?? -1, username: (event.user as string) ?? '?' },
+          locked_at: (event.locked_at as string) ?? '',
+        },
+      ]);
+    } else if (event.type === 'segment_unlocked' && event.job_id === jobId) {
+      const sid = event.segment_id as number;
+      if (lockedIdRef.current === sid && event.user !== user?.username) {
+        // наш лок снял менеджмент принудительно — забываем, что держим
+        lockedIdRef.current = null;
+      }
+      setLocks((prev) => prev.filter((l) => l.segment_id !== sid));
     } else if (event.type.startsWith('job_')) {
       void load();
     }
@@ -303,10 +398,20 @@ export default function EditorPage() {
     return job.segments.filter((s) => s.target_text.includes(findText)).length;
   }, [job, findText]);
 
+  // segment_id -> кто держит лок (для бейджей занятости в списке сегментов)
+  const lockBySegment = useMemo(() => {
+    const map = new Map<number, SegmentLockInfo>();
+    for (const l of locks) map.set(l.segment_id, l);
+    return map;
+  }, [locks]);
+
   if (!token) return <Navigate to="/login" replace />;
   if (!job) return <div className="muted center">{error || 'Loading…'}</div>;
 
-  const canEdit = EDITABLE.includes(job.status);
+  const canEdit = canEditJob;
+  // Чужой лок на активном сегменте: редактор read-only до снятия/TTL
+  const activeLock = active ? (lockBySegment.get(active.id) ?? null) : null;
+  const blockedBy = activeLock && activeLock.user.id !== (user?.id ?? -1) ? activeLock : null;
 
   const onChangeDraft = (text: string) => {
     if (!active) return;
@@ -544,30 +649,39 @@ export default function EditorPage() {
 
       <div className="editor-grid">
         <section className="card segment-list">
-          {visibleSegments.map((seg) => (
-            <button
-              key={seg.id}
-              className={`segment-row ${activeId === seg.id ? 'active' : ''}`}
-              onClick={() => void selectSegment(seg)}
-            >
-              <span className="seg-num">{seg.position + 1}</span>
-              <span className="seg-texts">
-                <span className="seg-source">{seg.source_text}</span>
-                <span className={`seg-target ${!seg.target_text ? 'empty' : ''}`}>
-                  {seg.target_text || '— not translated —'}
+          {visibleSegments.map((seg) => {
+            const holder = lockBySegment.get(seg.id);
+            const foreignLock = holder && holder.user.id !== (user?.id ?? -1) ? holder : null;
+            return (
+              <button
+                key={seg.id}
+                className={`segment-row ${activeId === seg.id ? 'active' : ''}`}
+                onClick={() => void selectSegment(seg)}
+              >
+                <span className="seg-num">{seg.position + 1}</span>
+                <span className="seg-texts">
+                  <span className="seg-source">{seg.source_text}</span>
+                  <span className={`seg-target ${!seg.target_text ? 'empty' : ''}`}>
+                    {seg.target_text || '— not translated —'}
+                  </span>
                 </span>
-              </span>
-              <span className="seg-badges">
-                {seg.is_mandatory && <span className="status-chip st-new">mand.</span>}
-                {notedIds.has(seg.id) && (
-                  <span className="status-chip st-drafted note-chip" title="Has comments">💬</span>
-                )}
-                {seg.confirmed
-                  ? <span className="status-chip st-translated">confirmed</span>
-                  : <span className={`status-chip st-${seg.translation_status}`}>{seg.translation_status}</span>}
-              </span>
-            </button>
-          ))}
+                <span className="seg-badges">
+                  {foreignLock && (
+                    <span className="status-chip st-new" title={`${foreignLock.user.username} is editing this segment`}>
+                      🔒 {foreignLock.user.username}
+                    </span>
+                  )}
+                  {seg.is_mandatory && <span className="status-chip st-new">mand.</span>}
+                  {notedIds.has(seg.id) && (
+                    <span className="status-chip st-drafted note-chip" title="Has comments">💬</span>
+                  )}
+                  {seg.confirmed
+                    ? <span className="status-chip st-translated">confirmed</span>
+                    : <span className={`status-chip st-${seg.translation_status}`}>{seg.translation_status}</span>}
+                </span>
+              </button>
+            );
+          })}
           {visibleSegments.length === 0 && (
             <div className="muted center" style={{ padding: 20 }}>No segments match the filter.</div>
           )}
@@ -698,31 +812,44 @@ export default function EditorPage() {
               </div>
 
               {canEdit ? (
-                <>
-                  <textarea
-                    ref={textareaRef}
-                    value={draft}
-                    onChange={(e) => onChangeDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.ctrlKey && e.key === 'Enter') void confirmAndNext();
-                      // Alt+↓/↑ — переход к следующему/предыдущему сегменту (стандарт CAT)
-                      if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); goto(1); }
-                      if (e.altKey && e.key === 'ArrowUp') { e.preventDefault(); goto(-1); }
-                      // Ctrl+H — найти и заменить по всем сегментам задания
-                      if (e.ctrlKey && (e.key === 'h' || e.key === 'H')) { e.preventDefault(); setReplaceOpen(true); }
-                    }}
-                    placeholder="Type translation here…"
-                    rows={4}
-                    autoFocus
-                  />
-                  <div className="row wrap">
-                    <button className="btn primary" onClick={() => void confirmAndNext()}>Confirm & Next</button>
-                    <span className="muted small-text">Ctrl+Enter · Alt+↑/↓</span>
-                    <span className="spacer" />
-                    <button className="btn small" onClick={() => void runMt()} disabled={mtBusy}>
-                      {mtBusy ? 'MT…' : 'Get MT'}
-                    </button>
+                blockedBy ? (
+                  <div className="alert">
+                    🔒 {blockedBy.user.username} is editing this segment — it stays read-only
+                    while they work. The lock is released automatically after inactivity.
                   </div>
+                ) : (
+                  <>
+                    <textarea
+                      ref={textareaRef}
+                      value={draft}
+                      onChange={(e) => onChangeDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.ctrlKey && e.key === 'Enter') void confirmAndNext();
+                        // Alt+↓/↑ — переход к следующему/предыдущему сегменту (стандарт CAT)
+                        if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); goto(1); }
+                        if (e.altKey && e.key === 'ArrowUp') { e.preventDefault(); goto(-1); }
+                        // Ctrl+H — найти и заменить по всем сегментам задания
+                        if (e.ctrlKey && (e.key === 'h' || e.key === 'H')) { e.preventDefault(); setReplaceOpen(true); }
+                      }}
+                      placeholder="Type translation here…"
+                      rows={4}
+                      autoFocus
+                    />
+                    <div className="row wrap">
+                      <button className="btn primary" onClick={() => void confirmAndNext()}>Confirm & Next</button>
+                      <span className="muted small-text">Ctrl+Enter · Alt+↑/↓</span>
+                      <span className="spacer" />
+                      <button className="btn small" onClick={() => void runMt()} disabled={mtBusy}>
+                        {mtBusy ? 'MT…' : 'Get MT'}
+                      </button>
+                    </div>
+                  </>
+                )
+              ) : (
+                <div className="muted">Segment is read-only in status “{job.status}”.</div>
+              )}
+              {canEdit && (
+                <>
                   {mt && (
                     <div className="mt-box">
                       <div className="muted small-text">Machine translation ({mt.provider}) — post-edit before use:</div>
@@ -764,8 +891,6 @@ export default function EditorPage() {
                     </div>
                   )}
                 </>
-              ) : (
-                <div className="muted">Segment is read-only in status “{job.status}”.</div>
               )}
             </>
           ) : (

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, downloadTbExport, downloadTbExportTbx, downloadTmExport, downloadTmExportCsv } from '../api/client';
-import type { TBEntry, TBInfo, TMEntry, TMInfo } from '../api/types';
+import {
+  api, downloadTbExport, downloadTbExportTbx, downloadTmExport, downloadTmExportCsv,
+} from '../api/client';
+import type { QaRegexRule, QaRegexTestResult, TBEntry, TBInfo, TMEntry, TMInfo } from '../api/types';
 
-type Tab = 'tm' | 'tb';
+type Tab = 'tm' | 'tb' | 'qa';
 
 const PAGE = 100; // размер страницы записей (бэкенд ограничивает limit≤500)
 
@@ -37,6 +39,17 @@ export default function ResourcesPage() {
   const [termNote, setTermNote] = useState('');
   const [termStatus, setTermStatus] = useState('preferred');
   const [search, setSearch] = useState('');
+  // RX-проверки QA: правила организации на регулярных выражениях
+  const [rules, setRules] = useState<QaRegexRule[]>([]);
+  const [ruleName, setRuleName] = useState('');
+  const [rulePattern, setRulePattern] = useState('');
+  const [ruleSide, setRuleSide] = useState<'source' | 'target'>('target');
+  const [ruleMust, setRuleMust] = useState(false);
+  const [ruleSeverity, setRuleSeverity] = useState<'warning' | 'error'>('warning');
+  const [ruleCase, setRuleCase] = useState(false);
+  const [ruleError, setRuleError] = useState('');
+  const [testText, setTestText] = useState('');
+  const [testResult, setTestResult] = useState<QaRegexTestResult | null>(null);
 
   const loadLists = useCallback(() => {
     api.tms().then(setTms).catch((e) => setError(e instanceof Error ? e.message : 'Load failed'));
@@ -135,13 +148,46 @@ export default function ResourcesPage() {
     void act(async () => downloadTbExportTbx(tbId));
   };
 
+  const loadRules = useCallback(() => {
+    api.qaRules().then(setRules).catch((e) => setError(e instanceof Error ? e.message : 'Load failed'));
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'qa') loadRules();
+  }, [tab, loadRules]);
+
+  const createRule = () => {
+    setRuleError('');
+    api.createQaRule({
+      name: ruleName, pattern: rulePattern, side: ruleSide, must_match: ruleMust,
+      severity: ruleSeverity, case_sensitive: ruleCase, enabled: true,
+    })
+      .then(() => {
+        setRuleName('');
+        setRulePattern('');
+        loadRules();
+      })
+      .catch((e) => setRuleError(e instanceof Error ? e.message : 'Failed to create rule'));
+  };
+
+  const runRuleTest = () => {
+    setTestResult(null);
+    api.testQaRule(rulePattern, ruleCase, testText)
+      .then(setTestResult)
+      .catch((e) => setRuleError(e instanceof Error ? e.message : 'Test failed'));
+  };
+
   return (
     <>
       <section className="card row">
         <button className={`btn small ${tab === 'tm' ? 'primary' : ''}`} onClick={() => { setTab('tm'); setEditTm(null); setEditTb(null); }}>Translation memory</button>
         <button className={`btn small ${tab === 'tb' ? 'primary' : ''}`} onClick={() => { setTab('tb'); setEditTm(null); setEditTb(null); }}>Termbase</button>
+        <button className={`btn small ${tab === 'qa' ? 'primary' : ''}`} onClick={() => setTab('qa')}
+                title="RX-проверки: регулярные выражения для QA (практика Trados/memoQ)">
+          QA Rules
+        </button>
         <span className="spacer" />
-        <input placeholder="Search entries…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        {tab !== 'qa' && <input placeholder="Search entries…" value={search} onChange={(e) => setSearch(e.target.value)} />}
       </section>
 
       {error && <div className="alert">{error}</div>}
@@ -385,6 +431,108 @@ export default function ResourcesPage() {
               </table>
             </section>
           )}
+        </>
+      )}
+      {tab === 'qa' && (
+        <>
+          <section className="card">
+            <div className="muted small-text">
+              RX-проверки QA: правило = регулярное выражение, которое «не должно» или
+              «должно» встречаться в исходнике/переводе обязательного сегмента.
+              Нарушение warning попадает в отчет QA, error блокирует сдачу задания.
+              Примеры: запрет двойных пробелов <code>  </code> или латиницы в кириллице
+              <code>[a-zA-Z]+</code>, обязательные кавычки-ёлочки <code>«.+»</code>, заглушки <code>TODO</code>.
+            </div>
+            <div className="row wrap" style={{ marginTop: 8 }}>
+              <input placeholder="Rule name…" value={ruleName} onChange={(e) => setRuleName(e.target.value)} style={{ width: 170 }} />
+              <input placeholder="Regex pattern…" value={rulePattern} onChange={(e) => setRulePattern(e.target.value)} style={{ width: 200, fontFamily: 'monospace' }} />
+              <select value={ruleSide} onChange={(e) => setRuleSide(e.target.value as 'source' | 'target')}>
+                <option value="target">in target</option>
+                <option value="source">in source</option>
+              </select>
+              <select value={String(ruleMust)} onChange={(e) => setRuleMust(e.target.value === 'true')}>
+                <option value="false">must NOT match</option>
+                <option value="true">must match</option>
+              </select>
+              <select value={ruleSeverity} onChange={(e) => setRuleSeverity(e.target.value as 'warning' | 'error')}>
+                <option value="warning">warning</option>
+                <option value="error">error (blocks submit)</option>
+              </select>
+              <label className="row" style={{ gap: 4, alignItems: 'center' }}>
+                <input type="checkbox" checked={ruleCase} onChange={(e) => setRuleCase(e.target.checked)} />
+                <span className="small-text">Aa</span>
+              </label>
+              <button className="btn small primary" disabled={!ruleName.trim() || !rulePattern.trim()} onClick={createRule}>
+                Add rule
+              </button>
+              <button className="btn small" disabled={!rulePattern.trim() || !testText.trim()} onClick={runRuleTest}>
+                Test pattern
+              </button>
+            </div>
+            {ruleError && <div className="alert" style={{ marginTop: 8 }}>{ruleError}</div>}
+            {testResult && (
+              <div className="muted small-text" style={{ marginTop: 6 }}>
+                {testResult.error
+                  ? `Pattern error: ${testResult.error}`
+                  : testResult.matches.length
+                    ? `Matches: ${testResult.matches.map((m) => `«${m}»`).join(', ')}`
+                    : 'No matches in the sample text.'}
+              </div>
+            )}
+            <div className="row wrap" style={{ marginTop: 6 }}>
+              <input
+                placeholder="Sample text to test the pattern…"
+                value={testText}
+                onChange={(e) => setTestText(e.target.value)}
+                style={{ flex: 1, minWidth: 260 }}
+              />
+            </div>
+          </section>
+
+          <section className="card">
+            <table className="jobs-table">
+              <thead>
+                <tr>
+                  <th>Rule</th><th>Pattern</th><th>Where</th><th>Kind</th><th>Severity</th><th>On</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rules.map((r) => (
+                  <tr key={r.id}>
+                    <td title={r.description}>{r.name}</td>
+                    <td style={{ fontFamily: 'monospace' }}>{r.pattern}</td>
+                    <td>{r.side}</td>
+                    <td>{r.must_match ? 'must match' : 'must not match'}</td>
+                    <td>
+                      <span className={`status-chip ${r.severity === 'error' ? 'st-new' : 'st-drafted'}`}>
+                        {r.severity}
+                      </span>
+                    </td>
+                    <td>
+                      <input
+                        type="checkbox" checked={r.enabled}
+                        title="Включить/выключить правило без удаления"
+                        onChange={(e) => void act(() => api.updateQaRule(r.id, { enabled: e.target.checked }))}
+                      />
+                    </td>
+                    <td className="actions-cell">
+                      <button
+                        className="btn small"
+                        onClick={() => {
+                          if (window.confirm(`Delete QA rule "${r.name}"?`)) {
+                            void act(() => api.deleteQaRule(r.id));
+                          }
+                        }}
+                      >Delete</button>
+                    </td>
+                  </tr>
+                ))}
+                {rules.length === 0 && (
+                  <tr><td colSpan={7} className="muted center">No QA rules yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </section>
         </>
       )}
     </>

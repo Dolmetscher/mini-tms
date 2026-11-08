@@ -294,6 +294,52 @@ class SegmentRevision(Base):
     author: Mapped["User"] = relationship()
 
 
+class SegmentLock(Base):
+    """Лок сегмента «кто редактирует — тот блокирует».
+
+    Оптимистичная блокировка (409 по updated_at) защищает от потери правок,
+    но о конфликте редакторы узнают постфактум. Мягкий лок с TTL показывает
+    занятость заранее: пока владелец держит сегмент открытым (клиент продлевает
+    лок heartbeat-ом), чужие сохранения отвергаются с 423. Лок старше TTL
+    считается просроченным (вкладка закрылась без явного снятия) и свободен.
+    """
+    __tablename__ = "segment_locks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    segment_id: Mapped[int] = mapped_column(
+        ForeignKey("segments.id"), unique=True, index=True
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    locked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped["User"] = relationship()
+
+
+class QaRegexRule(Base):
+    """QA-правило на регулярном выражении (RX-проверки, практика Trados/memoQ).
+
+    Семантика: паттерн «должен встречаться» / «не должен встречаться» в
+    исходнике или переводе обязательного сегмента. Покрывает корпоративные
+    требования, которые не выражаются встроенными проверками: типографские
+    кавычки, запрет латиницы в кириллице, неразрывные пробелы, заглушки TODO.
+    severity=error блокирует сдачу наравне со встроенными ошибками QA.
+    """
+    __tablename__ = "qa_regex_rules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    pattern: Mapped[str] = mapped_column(Text)
+    side: Mapped[str] = mapped_column(String(8), default="target")  # source | target
+    must_match: Mapped[bool] = mapped_column(Boolean, default=False)
+    # warning | error (error — блокирующая, не дает сдать задание)
+    severity: Mapped[str] = mapped_column(String(8), default="warning")
+    case_sensitive: Mapped[bool] = mapped_column(Boolean, default=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Notification(Base):
     __tablename__ = "notifications"
 

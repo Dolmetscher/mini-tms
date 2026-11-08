@@ -1,8 +1,8 @@
 import type {
   AnalysisReport, AppNotification, DocumentInfo, Job, JobDetail, LQAError, LQAReport, LoginResponse,
-  Member, MTSuggestion, PreTranslateResult, ProductivityRow, Project, ProjectQuote, QAReport, RateCard,
-  Resource, Segment, SegmentNote, SegmentRevision, TBEntry, TBHit, TBInfo, TMEntry, TMInfo, TMSuggestion,
-  User,
+  Member, MTSuggestion, PreTranslateResult, ProductivityRow, Project, ProjectQuote, QaRegexRule,
+  QaRegexTestResult, QAReport, RateCard, Resource, Segment, SegmentLockResponse, SegmentNote,
+  SegmentRevision, TBEntry, TBHit, TBInfo, TMEntry, TMInfo, TMSuggestion, User,
 } from './types';
 
 /** Дефолтный адрес API: env-переменная сборки → origin страницы (SPA с бэкенда
@@ -279,6 +279,11 @@ export const api = {
     }),
   saveSegment: (id: number, body: { target_text?: string; confirmed?: boolean; base_updated_at?: string }) =>
     request<Segment>(`/api/segments/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  // Локи «кто редактирует — тот блокирует»: захват/продление (heartbeat) и снятие
+  lockSegment: (id: number) =>
+    request<SegmentLockResponse>(`/api/segments/${id}/lock`, { method: 'POST' }),
+  unlockSegment: (id: number) =>
+    request<void>(`/api/segments/${id}/lock`, { method: 'DELETE' }),
   mtSuggest: (jobId: number, segmentId: number) =>
     request<MTSuggestion>(`/api/jobs/${jobId}/segments/${segmentId}/mt`),
 
@@ -306,6 +311,21 @@ export const api = {
   // Отчеты
   productivity: (updatedAfter?: string) =>
     request<ProductivityRow[]>(`/api/reports/productivity${q({ updated_after: updatedAfter })}`),
+
+  // RX-проверки QA: правила на регулярных выражениях (создание — pm/admin)
+  qaRules: () => request<QaRegexRule[]>('/api/qa-rules'),
+  createQaRule: (body: {
+    name: string; pattern: string; side: 'source' | 'target'; must_match: boolean;
+    severity: 'warning' | 'error'; case_sensitive: boolean; enabled: boolean; description?: string;
+  }) => request<QaRegexRule>('/api/qa-rules', { method: 'POST', body: JSON.stringify(body) }),
+  updateQaRule: (id: number, body: Partial<Omit<QaRegexRule, 'id' | 'created_at'>>) =>
+    request<QaRegexRule>(`/api/qa-rules/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteQaRule: (id: number) => request<void>(`/api/qa-rules/${id}`, { method: 'DELETE' }),
+  testQaRule: (pattern: string, caseSensitive: boolean, text: string) =>
+    request<QaRegexTestResult>('/api/qa-rules/test', {
+      method: 'POST',
+      body: JSON.stringify({ pattern, case_sensitive: caseSensitive, text }),
+    }),
 
   // TM / TB
   tms: () => request<TMInfo[]>('/api/tm/tms'),

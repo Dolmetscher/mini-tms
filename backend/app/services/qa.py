@@ -7,6 +7,10 @@
 слова, баланс скобок, конечная пунктуация, совпадение с исходником,
 плейсхолдеры форматов (%s, {0}, Qt %1) и аномальное соотношение длины.
 
+Поверх встроенных проверок применяются RX-правила организации (QaRegexRule):
+паттерн «должен / не должен встречаться» в исходнике или переводе — практика
+регулярных проверок Trados/memoQ; severity=error делает нарушение блокирующим.
+
 Все дополнительные проверки — только предупреждения: они не блокируют сдачу
 (в соответствии с ТЗ блокируют только три вида ошибок выше).
 """
@@ -241,9 +245,57 @@ def _check_terms(
     return issues
 
 
+def _load_regex_rules(db: Session, org_id: int) -> list[models.QaRegexRule]:
+    """Включенные RX-правила организации — одним запросом на весь QA-отчет."""
+    return (
+        db.query(models.QaRegexRule)
+        .filter(models.QaRegexRule.org_id == org_id, models.QaRegexRule.enabled.is_(True))
+        .order_by(models.QaRegexRule.id)
+        .all()
+    )
+
+
+def _check_regex_rules(
+    rules: list[models.QaRegexRule], segment: models.Segment
+) -> list[tuple[str, str]]:
+    """(сообщение, severity) по нарушенным RX-правилам организации.
+
+    Текст проверяется без inline-тегов (как у встроенных проверок): тегами
+    занимается отдельная блокирующая проверка tag_error. Правило с невалидным
+    паттерном пропускается — валидность гарантируется при создании, здесь QA
+    не должен падать из-за испорченной вручную записи.
+    """
+    issues: list[tuple[str, str]] = []
+    for rule in rules:
+        text = segment.source_text if rule.side == "source" else segment.target_text
+        if not text.strip():
+            continue
+        flags = 0 if rule.case_sensitive else re.IGNORECASE
+        try:
+            pattern = re.compile(rule.pattern, flags)
+        except re.error:
+            continue
+        plain = tags.strip_tags(text)
+        matched = pattern.search(plain)
+        # Нарушение: «должен совпадать», но не нашелся, либо «запрещен» и нашелся (XOR).
+        violated = rule.must_match != bool(matched)
+        if not violated:
+            continue
+        if matched:
+            fragment = matched.group(0)[:60]
+            message = (
+                f'Rule "{rule.name}": forbidden pattern found in the {rule.side}: "{fragment}"'
+            )
+        else:
+            message = f'Rule "{rule.name}": required pattern not found in the {rule.side}'
+        issues.append((message, rule.severity))
+    return issues
+
+
 def run_qa(db: Session, job: models.Job) -> dict:
     items: list[dict] = []
     tb_data = _load_tb_terms(db, job)
+    rx_rules = _load_regex_rules(db, job.org_id)
     for segment in job.segments:
         if not segment.is_mandatory:
             continue
@@ -311,6 +363,14 @@ def run_qa(db: Session, job: models.Job) -> dict:
         length_issue = _check_length_ratio(segment, job.project.source_lang, job.target_lang)
         if length_issue:
             add("length_ratio", length_issue)
+        for message, severity in _check_regex_rules(rx_rules, segment):
+            items.append({
+                "segment_id": segment.id,
+                "position": segment.position,
+                "code": "regex_rule",
+                "severity": severity,
+                "message": message,
+            })
 
     blocking = [i for i in items if i["severity"] == "error"]
     return {

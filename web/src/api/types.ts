@@ -93,6 +93,30 @@ export interface JobDetail extends Job {
   rework_comment: string;
   decline_reason: string;
   segments: Segment[];
+  // Свежие локи сегментов («кто редактирует — тот блокирует»)
+  locks: SegmentLockInfo[];
+}
+
+export interface SegmentLockInfo {
+  segment_id: number;
+  user: User;
+  locked_at: string;
+}
+
+export interface SegmentLockResponse {
+  segment_id: number;
+  locked_by: User;
+  locked_at: string;
+  ttl_seconds: number;
+}
+
+export interface LockConflictBody {
+  detail: {
+    message: string;
+    locked_by: User;
+    locked_at: string;
+    ttl_seconds: number;
+  };
 }
 
 export interface Member {
@@ -135,6 +159,26 @@ export interface QAReport {
   blocking_count: number;
   warning_count: number;
   items: QAItem[];
+}
+
+// --- RX-проверки QA: правила на регулярных выражениях ---
+
+export interface QaRegexRule {
+  id: number;
+  name: string;
+  pattern: string;
+  side: 'source' | 'target';
+  must_match: boolean;
+  severity: 'warning' | 'error';
+  case_sensitive: boolean;
+  enabled: boolean;
+  description: string;
+  created_at: string;
+}
+
+export interface QaRegexTestResult {
+  matches: string[];
+  error: string | null;
 }
 
 export interface MTSuggestion {
