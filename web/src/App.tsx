@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import FeedbackButton from './components/FeedbackButton';
 import Header from './components/Header';
 import EditorPage from './pages/EditorPage';
+import FeedbackPage from './pages/FeedbackPage';
 import JobsPage from './pages/JobsPage';
 import LoginPage from './pages/LoginPage';
 import NotificationsPage from './pages/NotificationsPage';
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/resources" element={<Shell><ResourcesPage /></Shell>} />
           <Route path="/rates" element={<Shell><RatesPage /></Shell>} />
           <Route path="/reports" element={<Shell><ReportsPage /></Shell>} />
+          <Route path="/feedback" element={<Shell><FeedbackPage /></Shell>} />
           <Route path="/notifications" element={<Shell><NotificationsPage /></Shell>} />
           <Route path="*" element={<Navigate to="/jobs" replace />} />
         </Routes>

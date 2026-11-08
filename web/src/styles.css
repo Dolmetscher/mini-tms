@@ -899,3 +899,27 @@ textarea {
   outline: none;
   border-color: var(--accent);
 }
+
+/* --- Лента обратной связи (pm/admin) --- */
+
+.feedback-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.feedback-row {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.feedback-message {
+  margin-top: 6px;
+  white-space: pre-wrap;
+}
+
+.feedback-page-link {
+  font-size: 12px;
+}
