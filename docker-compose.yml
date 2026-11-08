@@ -1,0 +1,23 @@
+# Mini-TMS: один контейнер (API + SPA + SQLite) с томом под данные.
+# Локально:  cp .env.example .env && docker compose up -d --build
+# Portainer: Stacks → Add stack → вставить этот файл → задать TMS_SECRET_KEY.
+services:
+  mini-tms:
+    build: .
+    image: mini-tms:latest
+    container_name: mini-tms
+    restart: unless-stopped
+    ports:
+      - "8080:8000"   # http://<сервер>:8080 ; впереди можно поставить reverse-proxy с HTTPS
+    environment:
+      # Секрет для подписи JWT: обязательно заменить (любая длинная случайная строка).
+      TMS_SECRET_KEY: ${TMS_SECRET_KEY:?Set TMS_SECRET_KEY in .env}
+      # MT по умолчанию выключен; включите libretranslate при наличии сервера MT.
+      TMS_MT_PROVIDER: ${TMS_MT_PROVIDER:-none}
+    volumes:
+      - mini-tms-data:/data          # SQLite + загруженные документы
+    # Защита соседних проектов на маленьком VPS: приложению хватает ~150-200 МБ.
+    mem_limit: 350m
+
+volumes:
+  mini-tms-data:

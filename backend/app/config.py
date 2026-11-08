@@ -77,3 +77,8 @@ SEGMENT_LOCK_TTL_SECONDS = int(os.environ.get("TMS_SEGMENT_LOCK_TTL", "600"))
 
 # RX-проверки QA: ограничение длины паттерна правила (гигиена входных данных).
 QA_REGEX_MAX_PATTERN = int(os.environ.get("TMS_QA_REGEX_MAX_PATTERN", "500"))
+
+# Обратная связь из UI (кнопка «Feedback» в бете): лимит длины сообщения и
+# защита от спама — не более N сообщений от одного пользователя в час.
+FEEDBACK_MAX_MESSAGE = int(os.environ.get("TMS_FEEDBACK_MAX_MESSAGE", "4000"))
+FEEDBACK_MAX_PER_HOUR = int(os.environ.get("TMS_FEEDBACK_MAX_PER_HOUR", "10"))

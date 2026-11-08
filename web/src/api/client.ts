@@ -1,8 +1,9 @@
 import type {
-  AnalysisReport, AppNotification, DocumentInfo, Job, JobDetail, LQAError, LQAReport, LoginResponse,
-  Member, MTSuggestion, PreTranslateResult, ProductivityRow, Project, ProjectQuote, QaRegexRule,
-  QaRegexTestResult, QAReport, RateCard, Resource, Segment, SegmentLockResponse, SegmentNote,
-  SegmentRevision, TBEntry, TBHit, TBInfo, TMEntry, TMInfo, TMSuggestion, User,
+  AnalysisReport, AppNotification, DocumentInfo, FeedbackItem, FeedbackKind, Job, JobDetail,
+  LQAError, LQAReport, LoginResponse, Member, MTSuggestion, PreTranslateResult, ProductivityRow,
+  Project, ProjectQuote, QaRegexRule, QaRegexTestResult, QAReport, RateCard, Resource, Segment,
+  SegmentLockResponse, SegmentNote, SegmentRevision, TBEntry, TBHit, TBInfo, TMEntry, TMInfo,
+  TMSuggestion, User,
 } from './types';
 
 /** Дефолтный адрес API: env-переменная сборки → origin страницы (SPA с бэкенда
@@ -380,6 +381,11 @@ export const api = {
     request<AppNotification>(`/api/notifications/${id}/read`, { method: 'POST' }),
   markAllNotificationsRead: () =>
     request<{ updated: number }>('/api/notifications/read-all', { method: 'POST' }),
+
+  // обратная связь (кнопка «Feedback»): отправка — все, лента — pm/admin
+  sendFeedback: (body: { kind: FeedbackKind; message: string; page?: string }) =>
+    request<FeedbackItem>('/api/feedback', { method: 'POST', body: JSON.stringify(body) }),
+  feedback: (limit?: number) => request<FeedbackItem[]>(`/api/feedback${q({ limit })}`),
 };
 
 export function userLabel(user: User | null): string {

@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import FeedbackButton from './components/FeedbackButton';
 import Header from './components/Header';
 import EditorPage from './pages/EditorPage';
 import JobsPage from './pages/JobsPage';
@@ -16,6 +17,7 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div className="page">
       <Header />
       {children}
+      <FeedbackButton />
     </div>
   );
 }

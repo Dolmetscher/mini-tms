@@ -1,0 +1,15 @@
+# В образ не нужны тесты, клиенты и локальные артефакты
+backend/tests
+backend/.venv
+backend/data
+backend/*.db
+web/node_modules
+web/dist
+desktop
+desktop-builds
+mobile
+screens
+docs
+.git
+.env
+**/__pycache__

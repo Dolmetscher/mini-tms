@@ -356,3 +356,14 @@ export interface WsEvent {
   ts: string;
   [key: string]: unknown;
 }
+
+export type FeedbackKind = 'bug' | 'idea' | 'question' | 'other';
+
+export interface FeedbackItem {
+  id: number;
+  kind: FeedbackKind;
+  message: string;
+  page: string;
+  author: User;
+  created_at: string;
+}

@@ -352,6 +352,26 @@ class Notification(Base):
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class Feedback(Base):
+    """Сообщение обратной связи из интерфейса (кнопка «Feedback»).
+
+    Бета-канал связи с пользователями: баги, идеи и вопросы уходят прямо из
+    UI вместе со страницей, где нажали кнопку, — не теряются в почте и чатах.
+    Ленту читает менеджмент организации (GET /api/feedback, последние 100).
+    """
+    __tablename__ = "feedback"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(16), default="other")  # bug | idea | question | other
+    message: Mapped[str] = mapped_column(Text)
+    page: Mapped[str] = mapped_column(String(200), default="")  # где нажали кнопку, напр. /editor/12
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    author: Mapped["User"] = relationship()
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 

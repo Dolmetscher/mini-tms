@@ -77,7 +77,7 @@ cd backend
 python -m venv .venv
 .venv/Scripts/pip install -r requirements.txt      # Linux/macOS: .venv/bin/pip
 .venv/Scripts/python -m uvicorn app.main:app --port 8000
-.venv/Scripts/python -m pytest tests/ -q           # 67 тестов: §12 + QA/TMX/конкорданс/CJK + леверидж + LQA/TBX/комментарии + биллинг/история/отчеты + локи/RX-QA
+.venv/Scripts/python -m pytest tests/ -q           # 70 тестов: §12 + QA/TMX/конкорданс/CJK + леверидж + LQA/TBX/комментарии + биллинг/история/отчеты + локи/RX-QA + обратная связь
 ```
 Swagger: http://localhost:8000/docs. Первый запуск создает БД и демо-данные:
 - организация **Demo Org**, пользователи `admin/admin123` (org admin),
@@ -107,6 +107,33 @@ cd web && npm install && npm run dev     # http://localhost:5173
 Пересборка: `cd mobile && npx expo prebuild -p android --no-install`, затем
 `cd android && JAVA_HOME=C:/Users/dolme/tools/jdk-17.0.20.1+1 ./gradlew.bat assembleDebug`.
 Нюансы сборки (зеркало Maven, sdk.dir, версии) — в конце файла и в git-истории.
+
+### 4. VPS через Docker (Portainer и без)
+Один контейнер: FastAPI раздает и API, и собранный SPA; SQLite и загруженные
+документы живут в томе `mini-tms-data` (/data).
+
+```bash
+git clone https://github.com/Dolmetscher/mini-tms.git && cd mini-tms
+cp .env.example .env                      # впишите TMS_SECRET_KEY (длинная случайная строка)
+docker compose up -d --build              # http://<сервер>:8080
+```
+
+В Portainer (без консоли): **Stacks → Add stack** → вставить `docker-compose.yml`
+из репозитория → в Environment добавить `TMS_SECRET_KEY=…` → **Deploy the stack**.
+Обновление — **Re-pull / Redeploy** (данные в томе переживают пересоздание).
+
+Бэкап — одним файлом:
+`docker run --rm -v mini-tms-data:/data -v $PWD:/backup alpine cp /data/tms.db /backup/`.
+HTTPS — реверс-прокси перед контейнером (Caddy в двух строках конфига или
+Nginx Proxy Manager из Portainer; не забудьте проксировать WebSocket `/ws`).
+
+### 5. Обратная связь из интерфейса (бета)
+Плавающая кнопка «💬 Feedback» есть на каждой странице: участник выбирает тип
+(баг / идея / вопрос / другое), пишет текст — сообщение сохраняется вместе с
+адресом страницы, где нажали кнопку. Лента читается менеджментом:
+`GET /api/feedback` (Swagger или `curl -H "Authorization: Bearer …" -H "X-Org-Id: 1"`),
+анти-спам — не более `TMS_FEEDBACK_MAX_PER_HOUR` (10) сообщений в час от
+пользователя.
 
 ## API (сокращенно; полный список — Swagger)
 
@@ -139,6 +166,7 @@ cd web && npm install && npm run dev     # http://localhost:5173
 | GET | /api/tm/tms/{id}/export · /api/tm/tms/{id}/export-csv · /api/tb/tbs/{id}/export · /api/tb/tbs/{id}/export-tbx | pm/admin | экспорт TM → TMX 1.4b и CSV, TB → CSV и TB → TBX-Basic (кругооборот с импортом) |
 | GET/POST | /api/notifications… | — | центр уведомлений |
 | GET/POST/PATCH/DELETE | /api/qa-rules[/{id}] | get: все; change: pm/admin | RX-проверки QA: правила организации на регулярных выражениях (сторона source/target, must match / must not match, warning/error, регистр, вкл/выкл); POST /api/qa-rules/test — прогон паттерна по образцу для предпросмотра |
+| POST/GET | /api/feedback | post: все; get: pm/admin | обратная связь из UI (кнопка «💬 Feedback»): тип + текст + страница, где нажали; анти-спам 429 по лимиту в час |
 | WS | /ws/updates?token=&org_id= | — | события: segment_updated, segment_locked/unlocked, note_added, lqa_error_*, job_*, notification |
 
 ## Матрица соответствия ТЗ

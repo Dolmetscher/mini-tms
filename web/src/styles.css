@@ -858,3 +858,44 @@ textarea {
   background: #fef2f2;
   color: var(--red);
 }
+
+/* --- Обратная связь: плавающая кнопка и модалка (бета) --- */
+
+.feedback-fab {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 40;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 14px;
+  box-shadow: 0 4px 14px rgb(15 23 42 / 0.15);
+  cursor: pointer;
+}
+
+.feedback-fab:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.feedback-modal {
+  width: 480px;
+}
+
+.feedback-text {
+  width: 100%;
+  resize: vertical;
+  margin-bottom: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.feedback-text:focus {
+  outline: none;
+  border-color: var(--accent);
+}

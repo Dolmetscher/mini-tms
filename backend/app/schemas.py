@@ -3,6 +3,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from . import config
+
 Role = Literal["admin", "pm", "translator"]
 JobStatus = Literal[
     "unassigned", "assigned", "declined", "accepted", "in_progress",
@@ -609,3 +611,21 @@ class ProductivityRow(BaseModel):
     words_confirmed: int
     lqa_jobs: int
     avg_lqa_score: Optional[float] = None
+
+
+# --- обратная связь из UI (кнопка «Feedback») ---
+
+
+class FeedbackCreate(BaseModel):
+    kind: Literal["bug", "idea", "question", "other"] = "other"
+    message: str = Field(min_length=3, max_length=config.FEEDBACK_MAX_MESSAGE)
+    page: str = Field(default="", max_length=200)
+
+
+class FeedbackOut(AuthoredModel):
+    id: int
+    kind: str
+    message: str
+    page: str
+    author: UserRef
+    created_at: datetime
