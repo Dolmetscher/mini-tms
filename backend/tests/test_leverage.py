@@ -269,7 +269,7 @@ def test_bilingual_export(client, pm, ann, ivan):
     doc = parse_docx(io.BytesIO(res.content))
     table = doc.tables[0]
     assert len(table.rows) == 3  # заголовок + 2 сегмента
-    assert [c.text for c in table.rows[0].cells] == ["#", "Source (en)", "Translation (ru)"]
+    assert [c.text for c in table.rows[0].cells] == ["#", "Исходник (en)", "Перевод (ru)"]
     assert table.rows[1].cells[1].text == "First segment."
     assert table.rows[1].cells[2].text == "Первый сегмент."
     assert table.rows[2].cells[2].text == "—"  # пустой перевод виден ревьюеру

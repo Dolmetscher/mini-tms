@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/tm", tags=["tm"])
 def _tm_or_404(ctx: Context, tm_id: int) -> models.TM:
     tm = ctx.db.get(models.TM, tm_id)
     if tm is None or tm.org_id != ctx.org_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="TM not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Память переводов (TM) не найдена")
     return tm
 
 
@@ -29,7 +29,7 @@ def _tm_or_404(ctx: Context, tm_id: int) -> models.TM:
 def list_tms(ctx: Context = Depends(get_context)):
     if not can_manage(ctx):
         # Переводчику TM доступны через проект; администрирование — менеджменту.
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Requires management role")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Требуется роль менеджмента")
     tms = ctx.db.query(models.TM).filter(models.TM.org_id == ctx.org_id).order_by(models.TM.id).all()
     return [
         schemas.TMOut(
@@ -109,7 +109,7 @@ def import_tmx(tm_id: int, file: UploadFile = File(...), ctx: Context = Depends(
     try:
         tree = etree.parse(file.file)
     except etree.XMLSyntaxError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid TMX: {exc}")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Некорректный TMX: {exc}")
 
     def seg_text(tuv) -> str:
         if tuv is None:
@@ -166,14 +166,14 @@ def import_csv(tm_id: int, file: UploadFile = File(...), ctx: Context = Depends(
     try:
         raw = file.file.read().decode("utf-8-sig")
     except UnicodeDecodeError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"CSV must be UTF-8: {exc}")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"CSV должен быть в UTF-8: {exc}")
     reader = csv.DictReader(io.StringIO(raw))
     # Заголовок в любом регистре (Source/Target/...) — как в import-csv у TB
     field_map = {(f or "").strip().lower(): f for f in (reader.fieldnames or [])}
     if "source" not in field_map or "target" not in field_map:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="CSV template: header row with columns source,target",
+            detail="Шаблон CSV: строка заголовка с колонками source,target",
         )
 
     added = updated = skipped = 0
@@ -213,12 +213,12 @@ def _align_units(file: UploadFile) -> list[str]:
     if fmt not in _ALIGN_FORMATS:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Alignment files must be .txt or .docx",
+            detail="Файлы выравнивания должны быть .txt или .docx",
         )
     try:
         segments, _ = segmentation.load_segments(fmt, file.file.read())
     except Exception as exc:  # битый docx и т.п.
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Cannot read file: {exc}")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Не удалось прочитать файл: {exc}")
     return [s for s in segments if s.strip()]
 
 
@@ -242,7 +242,7 @@ def align_files(
     if not source_units or not target_units:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Both files must contain at least one non-empty unit",
+            detail="Оба файла должны содержать хотя бы один непустой сегмент",
         )
     pairs = align_service.align_units(source_units, target_units)
     return {
@@ -425,7 +425,7 @@ def update_entry(
     tm = _tm_or_404(ctx, tm_id)
     entry = ctx.db.get(models.TMEntry, entry_id)
     if entry is None or entry.tm_id != tm.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="TM entry not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Запись TM не найдена")
     entry.target_text = body.target_text
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tm.entry_update", "tm_entry", entry.id, {})
     ctx.db.commit()
@@ -440,7 +440,7 @@ def delete_entry(tm_id: int, entry_id: int, ctx: Context = Depends(get_context))
     tm = _tm_or_404(ctx, tm_id)
     entry = ctx.db.get(models.TMEntry, entry_id)
     if entry is None or entry.tm_id != tm.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="TM entry not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Запись TM не найдена")
     ctx.db.delete(entry)
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tm.entry_delete", "tm_entry", entry_id, {
         "tm_id": tm.id,

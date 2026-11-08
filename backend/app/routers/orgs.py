@@ -31,7 +31,7 @@ def update_org(
     ctx: Context = Depends(require_admin),
 ):
     if ctx.org_id != org_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Wrong organization")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Объект принадлежит другой организации")
     ctx.org.mt_allowed = body.mt_allowed
     audit.audit(ctx.db, org_id, ctx.user_id, "org.update", "organization", org_id, body.model_dump())
     ctx.db.commit()
@@ -42,7 +42,7 @@ def update_org(
 @router.get("/orgs/{org_id}/members", response_model=list[schemas.MemberOut])
 def list_members(org_id: int, ctx: Context = Depends(require_management)):
     if ctx.org_id != org_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Wrong organization")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Объект принадлежит другой организации")
     members = (
         ctx.db.query(models.Membership, models.User)
         .join(models.User, models.Membership.user_id == models.User.id)
@@ -59,7 +59,7 @@ def list_members(org_id: int, ctx: Context = Depends(require_management)):
 @router.post("/orgs/{org_id}/members", response_model=schemas.MemberOut, status_code=status.HTTP_201_CREATED)
 def add_member(org_id: int, body: schemas.MemberCreate, ctx: Context = Depends(require_admin)):
     if ctx.org_id != org_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Wrong organization")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Объект принадлежит другой организации")
     user = ctx.db.query(models.User).filter(models.User.username == body.username).first()
     if user is None:
         user = models.User(username=body.username, password_hash=hash_password(body.password))
@@ -71,7 +71,7 @@ def add_member(org_id: int, body: schemas.MemberCreate, ctx: Context = Depends(r
         .first()
     )
     if existing is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="Already a member")
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Пользователь уже участник")
     membership = models.Membership(org_id=org_id, user_id=user.id, role=body.role)
     ctx.db.add(membership)
     audit.audit(ctx.db, org_id, ctx.user_id, "member.add", "membership", user.id, {"role": body.role})
@@ -88,10 +88,10 @@ def update_member_role(
     ctx: Context = Depends(require_admin),
 ):
     if ctx.org_id != org_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Wrong organization")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Объект принадлежит другой организации")
     membership = ctx.db.get(models.Membership, membership_id)
     if membership is None or membership.org_id != org_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Membership not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Участие не найдено")
     membership.role = body.role
     audit.audit(
         ctx.db, org_id, ctx.user_id, "member.role_change", "membership", membership_id, {"role": body.role}
@@ -111,7 +111,7 @@ def export_org_data(org_id: int, ctx: Context = Depends(require_management)):
     выгружаются; исходные файлы остаются в data/ (путь указан в документе).
     """
     if ctx.org_id != org_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Wrong organization")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Объект принадлежит другой организации")
     db = ctx.db
 
     def dump_tm(tm: models.TM) -> dict:

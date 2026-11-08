@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   api, downloadTbExport, downloadTbExportTbx, downloadTmExport, downloadTmExportCsv,
 } from '../api/client';
+import { TB_STATUS_LABELS } from '../api/labels';
 import type { AlignProposal, QaRegexRule, QaRegexTestResult, TBEntry, TBInfo, TMEntry, TMInfo } from '../api/types';
 
 type Tab = 'tm' | 'tb' | 'qa';
@@ -60,7 +61,7 @@ export default function ResourcesPage() {
   const [notice, setNotice] = useState('');
 
   const loadLists = useCallback(() => {
-    api.tms().then(setTms).catch((e) => setError(e instanceof Error ? e.message : 'Load failed'));
+    api.tms().then(setTms).catch((e) => setError(e instanceof Error ? e.message : 'Не удалось загрузить'));
     api.tbs().then(setTbs).catch(() => undefined);
   }, []);
 
@@ -88,7 +89,7 @@ export default function ResourcesPage() {
       loadLists();
       loadEntries();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Action failed');
+      setError(err instanceof Error ? err.message : 'Действие не удалось');
     }
   };
 
@@ -101,7 +102,7 @@ export default function ResourcesPage() {
   };
 
   const removeTmEntry = (entryId: number) => {
-    if (!selectedTm || !window.confirm('Delete this TM entry? It will stop showing as a suggestion.')) return;
+    if (!selectedTm || !window.confirm('Удалить запись TM? Она перестанет предлагаться как совпадение.')) return;
     void act(async () => {
       await api.deleteTMEntry(selectedTm, entryId);
       setEditTm(null);
@@ -119,7 +120,7 @@ export default function ResourcesPage() {
   };
 
   const removeTbEntry = (entryId: number) => {
-    if (!selectedTb || !window.confirm('Delete this term?')) return;
+    if (!selectedTb || !window.confirm('Удалить термин?')) return;
     void act(async () => {
       await api.deleteTBEntry(selectedTb, entryId);
       setEditTb(null);
@@ -154,7 +155,7 @@ export default function ResourcesPage() {
         proposal.pairs.map((p, i) => (p.score >= 0.5 ? i : -1)).filter((i) => i >= 0),
       ));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Alignment failed');
+      setError(err instanceof Error ? err.message : 'Не удалось выровнять');
       setAlignProposal(null);
     } finally {
       setAlignBusy(false);
@@ -171,7 +172,7 @@ export default function ResourcesPage() {
       const r = await api.confirmAlignment(
         selectedTm, chosen.map((p) => ({ source: p.source, target: p.target })),
       );
-      setNotice(`Alignment: ${r.added} added, ${r.updated} updated in the TM.`);
+      setNotice(`Выравнивание: добавлено ${r.added}, обновлено ${r.updated} в TM.`);
       setAlignOpen(false);
       setAlignProposal(null);
       setAlignSrc(null);
@@ -179,7 +180,7 @@ export default function ResourcesPage() {
       loadLists();
       loadEntries();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Alignment confirm failed');
+      setError(err instanceof Error ? err.message : 'Не удалось подтвердить выравнивание');
     } finally {
       setAlignBusy(false);
     }
@@ -202,7 +203,7 @@ export default function ResourcesPage() {
   };
 
   const loadRules = useCallback(() => {
-    api.qaRules().then(setRules).catch((e) => setError(e instanceof Error ? e.message : 'Load failed'));
+    api.qaRules().then(setRules).catch((e) => setError(e instanceof Error ? e.message : 'Не удалось загрузить'));
   }, []);
 
   useEffect(() => {
@@ -220,27 +221,27 @@ export default function ResourcesPage() {
         setRulePattern('');
         loadRules();
       })
-      .catch((e) => setRuleError(e instanceof Error ? e.message : 'Failed to create rule'));
+      .catch((e) => setRuleError(e instanceof Error ? e.message : 'Не удалось создать правило'));
   };
 
   const runRuleTest = () => {
     setTestResult(null);
     api.testQaRule(rulePattern, ruleCase, testText)
       .then(setTestResult)
-      .catch((e) => setRuleError(e instanceof Error ? e.message : 'Test failed'));
+      .catch((e) => setRuleError(e instanceof Error ? e.message : 'Тест не удался'));
   };
 
   return (
     <>
       <section className="card row">
-        <button className={`btn small ${tab === 'tm' ? 'primary' : ''}`} onClick={() => { setTab('tm'); setEditTm(null); setEditTb(null); }}>Translation memory</button>
-        <button className={`btn small ${tab === 'tb' ? 'primary' : ''}`} onClick={() => { setTab('tb'); setEditTm(null); setEditTb(null); }}>Termbase</button>
+        <button className={`btn small ${tab === 'tm' ? 'primary' : ''}`} onClick={() => { setTab('tm'); setEditTm(null); setEditTb(null); }}>Память переводов</button>
+        <button className={`btn small ${tab === 'tb' ? 'primary' : ''}`} onClick={() => { setTab('tb'); setEditTm(null); setEditTb(null); }}>Термбаза</button>
         <button className={`btn small ${tab === 'qa' ? 'primary' : ''}`} onClick={() => setTab('qa')}
                 title="RX-проверки: регулярные выражения для QA (практика Trados/memoQ)">
-          QA Rules
+          QA-правила
         </button>
         <span className="spacer" />
-        {tab !== 'qa' && <input placeholder="Search entries…" value={search} onChange={(e) => setSearch(e.target.value)} />}
+        {tab !== 'qa' && <input placeholder="Поиск по записям…" value={search} onChange={(e) => setSearch(e.target.value)} />}
       </section>
 
       {error && <div className="alert">{error}</div>}
@@ -249,18 +250,18 @@ export default function ResourcesPage() {
       {tab === 'tm' && (
         <>
           <section className="card row wrap">
-            <input placeholder="New TM name…" value={tmName} onChange={(e) => setTmName(e.target.value)} />
-            <input value={tmSource} onChange={(e) => setTmSource(e.target.value)} style={{ width: 60 }} title="source lang" />
+            <input placeholder="Название новой TM…" value={tmName} onChange={(e) => setTmName(e.target.value)} />
+            <input value={tmSource} onChange={(e) => setTmSource(e.target.value)} style={{ width: 60 }} title="исходный язык" />
             →
-            <input value={tmTarget} onChange={(e) => setTmTarget(e.target.value)} style={{ width: 60 }} title="target lang" />
+            <input value={tmTarget} onChange={(e) => setTmTarget(e.target.value)} style={{ width: 60 }} title="целевой язык" />
             <button className="btn small primary" disabled={!tmName.trim()}
                     onClick={() => act(() => api.createTM({ name: tmName, source_lang: tmSource, target_lang: tmTarget })).then(() => setTmName(''))}>
-              Create TM
+              Создать TM
             </button>
             {selectedTm && (
               <>
                 <label className="btn small" style={{ cursor: 'pointer' }}>
-                  Import TMX…
+                  Импорт TMX…
                   <input type="file" accept=".tmx,.xml" hidden
                          onChange={(e) => {
                            const f = e.target.files?.[0];
@@ -270,7 +271,7 @@ export default function ResourcesPage() {
                 </label>
                 <label className="btn small" style={{ cursor: 'pointer' }}
                        title="CSV: заголовок source,target — паритет с импортом глоссариев">
-                  Import CSV…
+                  Импорт CSV…
                   <input type="file" accept=".csv,text/csv" hidden
                          onChange={(e) => {
                            const f = e.target.files?.[0];
@@ -280,15 +281,15 @@ export default function ResourcesPage() {
                 </label>
                 <button className="btn small" onClick={() => exportTm(selectedTm)}
                         title="Экспорт в TMX 1.4b — обмен памятью с другими CAT-инструментами">
-                  Export TMX
+                  Экспорт TMX
                 </button>
                 <button className="btn small" onClick={() => exportTmCsv(selectedTm)}
                         title="Экспорт в CSV (source,target) — тот же шаблон, что и импорт">
-                  Export CSV
+                  Экспорт CSV
                 </button>
                 <button className="btn small" onClick={() => { setNotice(''); setError(''); setAlignOpen(true); }}
                         title="Наполнить TM из старых переводов: два параллельных файла, пары подтвердите сами">
-                  Align files…
+                  Выравнивание…
                 </button>
               </>
             )}
@@ -296,18 +297,18 @@ export default function ResourcesPage() {
 
           <section className="card row wrap">
             <select value={selectedTm ?? ''} onChange={(e) => { setSelectedTm(Number(e.target.value) || null); setEditTm(null); }}>
-              <option value="">select TM…</option>
+              <option value="">выберите TM…</option>
               {tms.map((t) => (
                 <option key={t.id} value={t.id}>{t.name} ({t.source_lang}→{t.target_lang}, {t.entry_count})</option>
               ))}
             </select>
             {selectedTm !== null && (
               <span className="row" style={{ gap: 6 }}>
-                <input placeholder="Source…" value={srcText} onChange={(e) => setSrcText(e.target.value)} style={{ minWidth: 220 }} />
-                <input placeholder="Target…" value={tgtText} onChange={(e) => setTgtText(e.target.value)} style={{ minWidth: 220 }} />
+                <input placeholder="Исходник…" value={srcText} onChange={(e) => setSrcText(e.target.value)} style={{ minWidth: 220 }} />
+                <input placeholder="Перевод…" value={tgtText} onChange={(e) => setTgtText(e.target.value)} style={{ minWidth: 220 }} />
                 <button className="btn small primary" disabled={!srcText.trim() || !tgtText.trim()}
                         onClick={() => act(() => api.upsertTMEntry(selectedTm, { source_text: srcText, target_text: tgtText })).then(() => { setSrcText(''); setTgtText(''); })}>
-                  Add / update
+                  Добавить / обновить
                 </button>
               </span>
             )}
@@ -316,7 +317,7 @@ export default function ResourcesPage() {
           {selectedTm !== null && (
             <section className="card">
               <table className="jobs-table">
-                <thead><tr><th>Source</th><th>Target</th><th></th></tr></thead>
+                <thead><tr><th>Исходник</th><th>Перевод</th><th></th></tr></thead>
                 <tbody>
                   {tmEntries.map((e) => (
                     <tr key={e.id}>
@@ -329,8 +330,8 @@ export default function ResourcesPage() {
                               onChange={(ev) => setEditTm({ ...editTm, target: ev.target.value })}
                               style={{ minWidth: 200 }}
                             />
-                            <button className="btn small primary" disabled={!editTm.target.trim()} onClick={saveTmEntry}>Save</button>
-                            <button className="btn small" onClick={() => setEditTm(null)}>Cancel</button>
+                            <button className="btn small primary" disabled={!editTm.target.trim()} onClick={saveTmEntry}>Сохранить</button>
+                            <button className="btn small" onClick={() => setEditTm(null)}>Отмена</button>
                           </span>
                         ) : e.target_text}
                       </td>
@@ -339,19 +340,19 @@ export default function ResourcesPage() {
                           <span className="row" style={{ gap: 4 }}>
                             <button
                               className="btn small"
-                              title="Maintenance: fix the translation of this entry"
+                              title="Сопровождение: исправить перевод этой записи"
                               onClick={() => setEditTm({ id: e.id, target: e.target_text })}
-                            >Edit</button>
-                            <button className="btn small" onClick={() => removeTmEntry(e.id)}>Delete</button>
+                            >Изменить</button>
+                            <button className="btn small" onClick={() => removeTmEntry(e.id)}>Удалить</button>
                           </span>
                         )}
                       </td>
                     </tr>
                   ))}
-                  {tmEntries.length === 0 && <tr><td colSpan={3} className="muted center">No entries.</td></tr>}
+                  {tmEntries.length === 0 && <tr><td colSpan={3} className="muted center">Нет записей.</td></tr>}
                   {tmEntries.length > 0 && tmEntries.length < tmTotal && (
                     <tr><td colSpan={3} className="center">
-                      <button className="btn small" onClick={loadMoreTm}>Load more ({tmEntries.length} of {tmTotal})</button>
+                      <button className="btn small" onClick={loadMoreTm}>Показать еще ({tmEntries.length} из {tmTotal})</button>
                     </td></tr>
                   )}
                 </tbody>
@@ -362,34 +363,34 @@ export default function ResourcesPage() {
           {alignOpen && (
             <div className="modal-backdrop" onClick={() => setAlignOpen(false)}>
               <div className="modal card align-modal" onClick={(e) => e.stopPropagation()}>
-                <h3 className="panel-title">Align parallel files → TM</h3>
+                <h3 className="panel-title">Выравнивание параллельных файлов → TM</h3>
                 <p className="muted">
-                  Upload an old source file and its translation (.txt / .docx). Pairs are matched by
-                  anchors — numbers and proper names — then reviewed by you before anything is written.
+                  Загрузите старый исходный файл и его перевод (.txt / .docx). Пары сопоставляются
+                  по якорям — числам и именам собственным, — а перед записью в TM вы подтверждаете их вручную.
                 </p>
                 <div className="row wrap" style={{ gap: 8, marginTop: 10 }}>
                   <label className="btn small" style={{ cursor: 'pointer' }}>
-                    {alignSrc ? `SRC: ${alignSrc.name}` : 'Source file…'}
+                    {alignSrc ? `ИСХ: ${alignSrc.name}` : 'Исходный файл…'}
                     <input type="file" accept=".txt,.docx" hidden
                            onChange={(e) => setAlignSrc(e.target.files?.[0] ?? null)} />
                   </label>
                   <label className="btn small" style={{ cursor: 'pointer' }}>
-                    {alignTgt ? `TGT: ${alignTgt.name}` : 'Translation file…'}
+                    {alignTgt ? `ПЕР: ${alignTgt.name}` : 'Файл перевода…'}
                     <input type="file" accept=".txt,.docx" hidden
                            onChange={(e) => setAlignTgt(e.target.files?.[0] ?? null)} />
                   </label>
                   <span className="spacer" />
                   <button className="btn small primary" disabled={!alignSrc || !alignTgt || alignBusy}
                           onClick={() => void proposeAlignment()}>
-                    {alignBusy ? 'Working…' : 'Propose pairs'}
+                    {alignBusy ? 'Работаю…' : 'Предложить пары'}
                   </button>
                 </div>
 
                 {alignProposal && (
                   <>
                     <p className="muted small-text" style={{ marginTop: 10 }}>
-                      {alignProposal.pairs.length} pair(s) proposed · source {alignProposal.source_units} units,
-                      translation {alignProposal.target_units}. Match score = shared anchors; uncheck anything wrong.
+                      Предложено пар: {alignProposal.pairs.length} · исходник {alignProposal.source_units} сегментов,
+                      перевод {alignProposal.target_units}. Оценка совпадения = общие якоря; снимите галочки с неверных пар.
                     </p>
                     <div className="align-list">
                       {alignProposal.pairs.map((p, i) => (
@@ -415,11 +416,11 @@ export default function ResourcesPage() {
                       ))}
                     </div>
                     <div className="row" style={{ marginTop: 10 }}>
-                      <button className="btn" onClick={() => setAlignOpen(false)}>Cancel</button>
+                      <button className="btn" onClick={() => setAlignOpen(false)}>Отмена</button>
                       <span className="spacer" />
                       <button className="btn primary" disabled={alignBusy || alignChecked.size === 0}
                               onClick={() => void confirmAlignmentPairs()}>
-                        Add {alignChecked.size} pair(s) to TM
+                        Добавить {alignChecked.size} пар в TM
                       </button>
                     </div>
                   </>
@@ -433,18 +434,18 @@ export default function ResourcesPage() {
       {tab === 'tb' && (
         <>
           <section className="card row wrap">
-            <input placeholder="New TB name…" value={tbName} onChange={(e) => setTbName(e.target.value)} />
-            <input value={tbSource} onChange={(e) => setTbSource(e.target.value)} style={{ width: 60 }} title="source lang" />
+            <input placeholder="Название новой TB…" value={tbName} onChange={(e) => setTbName(e.target.value)} />
+            <input value={tbSource} onChange={(e) => setTbSource(e.target.value)} style={{ width: 60 }} title="исходный язык" />
             →
-            <input value={tbTarget} onChange={(e) => setTbTarget(e.target.value)} style={{ width: 60 }} title="target lang" />
+            <input value={tbTarget} onChange={(e) => setTbTarget(e.target.value)} style={{ width: 60 }} title="целевой язык" />
             <button className="btn small primary" disabled={!tbName.trim()}
                     onClick={() => act(() => api.createTB({ name: tbName, source_lang: tbSource, target_lang: tbTarget })).then(() => setTbName(''))}>
-              Create TB
+              Создать TB
             </button>
             {selectedTb && (
               <>
                 <label className="btn small" style={{ cursor: 'pointer' }}>
-                  Import CSV…
+                  Импорт CSV…
                   <input type="file" accept=".csv,text/csv" hidden
                          onChange={(e) => {
                            const f = e.target.files?.[0];
@@ -453,7 +454,7 @@ export default function ResourcesPage() {
                          }} />
                 </label>
                 <label className="btn small" style={{ cursor: 'pointer' }}>
-                  Import TBX…
+                  Импорт TBX…
                   <input type="file" accept=".tbx,.xml" hidden
                          onChange={(e) => {
                            const f = e.target.files?.[0];
@@ -463,11 +464,11 @@ export default function ResourcesPage() {
                 </label>
                 <button className="btn small" onClick={() => exportTb(selectedTb)}
                         title="Экспорт в CSV (term,translation,note,status) — тот же шаблон, что и импорт">
-                  Export CSV
+                  Экспорт CSV
                 </button>
                 <button className="btn small" onClick={() => exportTbTbx(selectedTb)}
                         title="Экспорт в TBX-Basic (LISA) — индустриальный стандарт обмена терминологией">
-                  Export TBX
+                  Экспорт TBX
                 </button>
               </>
             )}
@@ -475,24 +476,24 @@ export default function ResourcesPage() {
 
           <section className="card row wrap">
             <select value={selectedTb ?? ''} onChange={(e) => { setSelectedTb(Number(e.target.value) || null); setEditTb(null); }}>
-              <option value="">select TB…</option>
+              <option value="">выберите TB…</option>
               {tbs.map((t) => (
                 <option key={t.id} value={t.id}>{t.name} ({t.source_lang}→{t.target_lang}, {t.entry_count})</option>
               ))}
             </select>
             {selectedTb !== null && (
               <span className="row" style={{ gap: 6 }}>
-                <input placeholder="Term…" value={term} onChange={(e) => setTerm(e.target.value)} style={{ width: 140 }} />
-                <input placeholder="Translation…" value={termTr} onChange={(e) => setTermTr(e.target.value)} style={{ width: 160 }} />
+                <input placeholder="Термин…" value={term} onChange={(e) => setTerm(e.target.value)} style={{ width: 140 }} />
+                <input placeholder="Перевод…" value={termTr} onChange={(e) => setTermTr(e.target.value)} style={{ width: 160 }} />
                 <select value={termStatus} onChange={(e) => setTermStatus(e.target.value)}>
-                  <option value="preferred">preferred</option>
-                  <option value="admitted">admitted</option>
-                  <option value="forbidden">forbidden</option>
+                  <option value="preferred">основной</option>
+                  <option value="admitted">допустимый</option>
+                  <option value="forbidden">запрещен</option>
                 </select>
-                <input placeholder="Note…" value={termNote} onChange={(e) => setTermNote(e.target.value)} style={{ width: 180 }} />
+                <input placeholder="Примечание…" value={termNote} onChange={(e) => setTermNote(e.target.value)} style={{ width: 180 }} />
                 <button className="btn small primary" disabled={!term.trim() || !termTr.trim()}
                         onClick={() => act(() => api.addTBEntry(selectedTb, { term, translation: termTr, note: termNote, status: termStatus })).then(() => { setTerm(''); setTermTr(''); setTermNote(''); })}>
-                  Add
+                  Добавить
                 </button>
               </span>
             )}
@@ -501,7 +502,7 @@ export default function ResourcesPage() {
           {selectedTb !== null && (
             <section className="card">
               <table className="jobs-table">
-                <thead><tr><th>Term</th><th>Translation</th><th>Status</th><th>Note</th><th></th></tr></thead>
+                <thead><tr><th>Термин</th><th>Перевод</th><th>Статус</th><th>Примечание</th><th></th></tr></thead>
                 <tbody>
                   {tbEntries.map((e) => (
                     <tr key={e.id}>
@@ -518,12 +519,12 @@ export default function ResourcesPage() {
                       <td>
                         {editTb?.id === e.id ? (
                           <select value={editTb.status} onChange={(ev) => setEditTb({ ...editTb, status: ev.target.value })}>
-                            <option value="preferred">preferred</option>
-                            <option value="admitted">admitted</option>
-                            <option value="forbidden">forbidden</option>
+                            <option value="preferred">основной</option>
+                            <option value="admitted">допустимый</option>
+                            <option value="forbidden">запрещен</option>
                           </select>
                         ) : (
-                          <span className={`status-chip ${e.status === 'forbidden' ? 'st-new' : 'st-translated'}`}>{e.status}</span>
+                          <span className={`status-chip ${e.status === 'forbidden' ? 'st-new' : 'st-translated'}`}>{TB_STATUS_LABELS[e.status] ?? e.status}</span>
                         )}
                       </td>
                       <td className="muted" style={{ minWidth: 180 }}>
@@ -534,24 +535,24 @@ export default function ResourcesPage() {
                       <td className="actions-cell">
                         {editTb?.id === e.id ? (
                           <span className="row" style={{ gap: 4 }}>
-                            <button className="btn small primary" disabled={!editTb.term.trim() || !editTb.translation.trim()} onClick={saveTbEntry}>Save</button>
-                            <button className="btn small" onClick={() => setEditTb(null)}>Cancel</button>
+                            <button className="btn small primary" disabled={!editTb.term.trim() || !editTb.translation.trim()} onClick={saveTbEntry}>Сохранить</button>
+                            <button className="btn small" onClick={() => setEditTb(null)}>Отмена</button>
                           </span>
                         ) : (
                           <span className="row" style={{ gap: 4 }}>
                             <button className="btn small" onClick={() => setEditTb({
                               id: e.id, term: e.term, translation: e.translation, note: e.note, status: e.status,
-                            })}>Edit</button>
-                            <button className="btn small" onClick={() => removeTbEntry(e.id)}>Delete</button>
+                            })}>Изменить</button>
+                            <button className="btn small" onClick={() => removeTbEntry(e.id)}>Удалить</button>
                           </span>
                         )}
                       </td>
                     </tr>
                   ))}
-                  {tbEntries.length === 0 && <tr><td colSpan={5} className="muted center">No entries.</td></tr>}
+                  {tbEntries.length === 0 && <tr><td colSpan={5} className="muted center">Нет записей.</td></tr>}
                   {tbEntries.length > 0 && tbEntries.length < tbTotal && (
                     <tr><td colSpan={5} className="center">
-                      <button className="btn small" onClick={loadMoreTb}>Load more ({tbEntries.length} of {tbTotal})</button>
+                      <button className="btn small" onClick={loadMoreTb}>Показать еще ({tbEntries.length} из {tbTotal})</button>
                     </td></tr>
                   )}
                 </tbody>
@@ -571,44 +572,44 @@ export default function ResourcesPage() {
               <code>[a-zA-Z]+</code>, обязательные кавычки-ёлочки <code>«.+»</code>, заглушки <code>TODO</code>.
             </div>
             <div className="row wrap" style={{ marginTop: 8 }}>
-              <input placeholder="Rule name…" value={ruleName} onChange={(e) => setRuleName(e.target.value)} style={{ width: 170 }} />
-              <input placeholder="Regex pattern…" value={rulePattern} onChange={(e) => setRulePattern(e.target.value)} style={{ width: 200, fontFamily: 'monospace' }} />
+              <input placeholder="Название правила…" value={ruleName} onChange={(e) => setRuleName(e.target.value)} style={{ width: 170 }} />
+              <input placeholder="Regex-паттерн…" value={rulePattern} onChange={(e) => setRulePattern(e.target.value)} style={{ width: 200, fontFamily: 'monospace' }} />
               <select value={ruleSide} onChange={(e) => setRuleSide(e.target.value as 'source' | 'target')}>
-                <option value="target">in target</option>
-                <option value="source">in source</option>
+                <option value="target">в переводе</option>
+                <option value="source">в исходнике</option>
               </select>
               <select value={String(ruleMust)} onChange={(e) => setRuleMust(e.target.value === 'true')}>
-                <option value="false">must NOT match</option>
-                <option value="true">must match</option>
+                <option value="false">не должен встречаться</option>
+                <option value="true">должен встречаться</option>
               </select>
               <select value={ruleSeverity} onChange={(e) => setRuleSeverity(e.target.value as 'warning' | 'error')}>
-                <option value="warning">warning</option>
-                <option value="error">error (blocks submit)</option>
+                <option value="warning">warning (предупреждение)</option>
+                <option value="error">error (блокирует сдачу)</option>
               </select>
               <label className="row" style={{ gap: 4, alignItems: 'center' }}>
                 <input type="checkbox" checked={ruleCase} onChange={(e) => setRuleCase(e.target.checked)} />
                 <span className="small-text">Aa</span>
               </label>
               <button className="btn small primary" disabled={!ruleName.trim() || !rulePattern.trim()} onClick={createRule}>
-                Add rule
+                Добавить правило
               </button>
               <button className="btn small" disabled={!rulePattern.trim() || !testText.trim()} onClick={runRuleTest}>
-                Test pattern
+                Проверить паттерн
               </button>
             </div>
             {ruleError && <div className="alert" style={{ marginTop: 8 }}>{ruleError}</div>}
             {testResult && (
               <div className="muted small-text" style={{ marginTop: 6 }}>
                 {testResult.error
-                  ? `Pattern error: ${testResult.error}`
+                  ? `Ошибка в паттерне: ${testResult.error}`
                   : testResult.matches.length
-                    ? `Matches: ${testResult.matches.map((m) => `«${m}»`).join(', ')}`
-                    : 'No matches in the sample text.'}
+                    ? `Совпадения: ${testResult.matches.map((m) => `«${m}»`).join(', ')}`
+                    : 'В примере совпадений нет.'}
               </div>
             )}
             <div className="row wrap" style={{ marginTop: 6 }}>
               <input
-                placeholder="Sample text to test the pattern…"
+                placeholder="Пример текста для проверки паттерна…"
                 value={testText}
                 onChange={(e) => setTestText(e.target.value)}
                 style={{ flex: 1, minWidth: 260 }}
@@ -620,7 +621,7 @@ export default function ResourcesPage() {
             <table className="jobs-table">
               <thead>
                 <tr>
-                  <th>Rule</th><th>Pattern</th><th>Where</th><th>Kind</th><th>Severity</th><th>On</th><th></th>
+                  <th>Правило</th><th>Паттерн</th><th>Где</th><th>Тип</th><th>Серьезность</th><th>Вкл</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -628,8 +629,8 @@ export default function ResourcesPage() {
                   <tr key={r.id}>
                     <td title={r.description}>{r.name}</td>
                     <td style={{ fontFamily: 'monospace' }}>{r.pattern}</td>
-                    <td>{r.side}</td>
-                    <td>{r.must_match ? 'must match' : 'must not match'}</td>
+                    <td>{r.side === 'target' ? 'перевод' : 'исходник'}</td>
+                    <td>{r.must_match ? 'должен встречаться' : 'не должен встречаться'}</td>
                     <td>
                       <span className={`status-chip ${r.severity === 'error' ? 'st-new' : 'st-drafted'}`}>
                         {r.severity}
@@ -646,16 +647,16 @@ export default function ResourcesPage() {
                       <button
                         className="btn small"
                         onClick={() => {
-                          if (window.confirm(`Delete QA rule "${r.name}"?`)) {
+                          if (window.confirm(`Удалить QA-правило «${r.name}»?`)) {
                             void act(() => api.deleteQaRule(r.id));
                           }
                         }}
-                      >Delete</button>
+                      >Удалить</button>
                     </td>
                   </tr>
                 ))}
                 {rules.length === 0 && (
-                  <tr><td colSpan={7} className="muted center">No QA rules yet.</td></tr>
+                  <tr><td colSpan={7} className="muted center">QA-правил пока нет.</td></tr>
                 )}
               </tbody>
             </table>

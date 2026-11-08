@@ -17,14 +17,14 @@ router = APIRouter(prefix="/api/tb", tags=["tb"])
 def _tb_or_404(ctx: Context, tb_id: int) -> models.TB:
     tb = ctx.db.get(models.TB, tb_id)
     if tb is None or tb.org_id != ctx.org_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="TB not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Термбаза (TB) не найдена")
     return tb
 
 
 @router.get("/tbs", response_model=list[schemas.TBOut])
 def list_tbs(ctx: Context = Depends(get_context)):
     if not can_manage(ctx):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Requires management role")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Требуется роль менеджмента")
     tbs = ctx.db.query(models.TB).filter(models.TB.org_id == ctx.org_id).order_by(models.TB.id).all()
     return [
         schemas.TBOut(
@@ -97,7 +97,7 @@ def import_csv(tb_id: int, file: UploadFile = File(...), ctx: Context = Depends(
     if not expected.issubset(field_map):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="CSV template: header row with columns term,translation,note,status",
+            detail="Шаблон CSV: строка заголовка с колонками term,translation,note,status",
         )
     added = skipped = 0
     for row in reader:
@@ -214,7 +214,7 @@ def update_entry(
     tb = _tb_or_404(ctx, tb_id)
     entry = ctx.db.get(models.TBEntry, entry_id)
     if entry is None or entry.tb_id != tb.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Term entry not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Термин не найден")
     if body.term is not None and body.term != entry.term:
         duplicate = (
             ctx.db.query(models.TBEntry)
@@ -224,7 +224,7 @@ def update_entry(
         if duplicate is not None:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
-                detail=f"Term '{body.term}' already exists in this termbase",
+                detail=f"Термин «{body.term}» уже есть в этой термбазе",
             )
         entry.term = body.term
     if body.translation is not None:
@@ -247,7 +247,7 @@ def delete_entry(tb_id: int, entry_id: int, ctx: Context = Depends(get_context))
     tb = _tb_or_404(ctx, tb_id)
     entry = ctx.db.get(models.TBEntry, entry_id)
     if entry is None or entry.tb_id != tb.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Term entry not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Термин не найден")
     ctx.db.delete(entry)
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tb.entry_delete", "tb_entry", entry_id, {
         "tb_id": tb.id,

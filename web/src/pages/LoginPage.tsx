@@ -27,7 +27,7 @@ export default function LoginPage() {
       await login(u, p);
       navigate('/jobs');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      setError(err instanceof Error ? err.message : 'Не удалось войти');
     } finally {
       setBusy(false);
     }
@@ -37,40 +37,40 @@ export default function LoginPage() {
     <div className="login-wrap">
       <form className="card login-card" onSubmit={submit}>
         <h1 className="brand">Mini&#8209;TMS CAT</h1>
-        <p className="muted">Sign in to translate and manage jobs.</p>
+        <p className="muted">Войдите, чтобы переводить и управлять заданиями.</p>
 
         <label className="field">
-          <span>Server address</span>
+          <span>Адрес сервера</span>
           <input value={server} onChange={(e) => setServer(e.target.value)} autoCapitalize="none" />
         </label>
         <label className="field">
-          <span>Username</span>
+          <span>Имя пользователя</span>
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
         </label>
         <label className="field">
-          <span>Password</span>
+          <span>Пароль</span>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </label>
 
         {error && <div className="alert">{error}</div>}
 
         <button className="btn primary" type="submit" disabled={busy || !username || !password}>
-          {busy ? 'Signing in…' : 'Sign in'}
+          {busy ? 'Вход…' : 'Войти'}
         </button>
 
-        <div className="divider">demo accounts</div>
+        <div className="divider">демо-аккаунты</div>
         <div className="row wrap">
           <button type="button" className="btn small" onClick={() => doLogin('pm', 'pm123')} disabled={busy}>
-            Project Manager
+            Менеджер проектов
           </button>
           <button type="button" className="btn small" onClick={() => doLogin('ann', 'ann123')} disabled={busy}>
-            Linguist (ann)
+            Переводчик (ann)
           </button>
           <button type="button" className="btn small" onClick={() => doLogin('ivan', 'ivan123')} disabled={busy}>
-            Linguist (ivan)
+            Переводчик (ivan)
           </button>
           <button type="button" className="btn small" onClick={() => doLogin('admin', 'admin123')} disabled={busy}>
-            Org Admin
+            Админ организации
           </button>
         </div>
       </form>

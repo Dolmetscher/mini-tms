@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { fmtDateTime } from '../api/labels';
 import type { Project } from '../api/types';
 import { useUpdates } from '../ws/useUpdates';
 
@@ -16,7 +17,7 @@ export default function ProjectsPage() {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
-    api.projects().then(setProjects).catch((e) => setError(e instanceof Error ? e.message : 'Load failed'));
+    api.projects().then(setProjects).catch((e) => setError(e instanceof Error ? e.message : 'Не удалось загрузить'));
   }, []);
 
   useEffect(load, [load]);
@@ -39,7 +40,7 @@ export default function ProjectsPage() {
       setName(''); setTargets('ru'); setDeadline(''); setInstructions('');
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Create failed');
+      setError(err instanceof Error ? err.message : 'Не удалось создать');
     } finally {
       setBusy(false);
     }
@@ -48,25 +49,25 @@ export default function ProjectsPage() {
   return (
     <>
       <section className="card">
-        <h3 className="panel-title">New project</h3>
+        <h3 className="panel-title">Новый проект</h3>
         <div className="row wrap">
-          <input placeholder="Project name…" value={name} onChange={(e) => setName(e.target.value)} style={{ minWidth: 200 }} />
-          <label className="muted small-text">source</label>
+          <input placeholder="Название проекта…" value={name} onChange={(e) => setName(e.target.value)} style={{ minWidth: 200 }} />
+          <label className="muted small-text">исходный</label>
           <input value={source} onChange={(e) => setSource(e.target.value)} style={{ width: 64 }} />
-          <label className="muted small-text">targets (comma-sep)</label>
+          <label className="muted small-text">целевые (через запятую)</label>
           <input value={targets} onChange={(e) => setTargets(e.target.value)} style={{ width: 120 }} />
-          <label className="muted small-text">deadline</label>
+          <label className="muted small-text">дедлайн</label>
           <input type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
           <label className="muted small-text"><input type="checkbox" checked={mtEnabled} onChange={(e) => setMtEnabled(e.target.checked)} /> MT</label>
         </div>
         <div className="row wrap" style={{ marginTop: 8 }}>
           <input
-            placeholder="Instructions for translators…"
+            placeholder="Инструкции для переводчиков…"
             value={instructions} onChange={(e) => setInstructions(e.target.value)}
             style={{ flex: 1, minWidth: 260 }}
           />
           <button className="btn primary" disabled={busy || !name.trim() || !targets.trim()} onClick={create}>
-            Create project
+            Создать проект
           </button>
         </div>
       </section>
@@ -76,7 +77,7 @@ export default function ProjectsPage() {
       <section className="card">
         <table className="jobs-table">
           <thead>
-            <tr><th>Project</th><th>Languages</th><th>Deadline</th><th>MT</th><th /></tr>
+            <tr><th>Проект</th><th>Языки</th><th>Дедлайн</th><th>MT</th><th /></tr>
           </thead>
           <tbody>
             {projects.map((p) => (
@@ -84,14 +85,14 @@ export default function ProjectsPage() {
                 <td className="job-title">{p.name}</td>
                 <td className="muted">{p.source_lang} → {p.target_langs.join(', ')}</td>
                 <td className="muted">
-                  {p.deadline ? new Date(p.deadline.endsWith('Z') || p.deadline.includes('+') ? p.deadline : p.deadline + 'Z').toLocaleString() : '—'}
+                  {fmtDateTime(p.deadline)}
                 </td>
-                <td>{p.mt_enabled ? 'on' : 'off'}</td>
-                <td><Link className="btn small" to={`/projects/${p.id}`}>Open dashboard</Link></td>
+                <td>{p.mt_enabled ? 'вкл' : 'выкл'}</td>
+                <td><Link className="btn small" to={`/projects/${p.id}`}>Открыть панель</Link></td>
               </tr>
             ))}
             {projects.length === 0 && (
-              <tr><td colSpan={5} className="muted center">No projects yet.</td></tr>
+              <tr><td colSpan={5} className="muted center">Пока нет проектов.</td></tr>
             )}
           </tbody>
         </table>

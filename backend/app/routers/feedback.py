@@ -32,7 +32,7 @@ def create_feedback(body: schemas.FeedbackCreate, ctx: Context = Depends(get_con
     if recent >= config.FEEDBACK_MAX_PER_HOUR:
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many feedback messages, try again later",
+            detail="Слишком много сообщений, попробуйте позже",
         )
     fb = models.Feedback(
         org_id=ctx.org_id,

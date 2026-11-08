@@ -178,14 +178,14 @@ def test_invoice_docx_export(client, pm, ann, submitted):
     doc = open_docx(io.BytesIO(res.content))
     texts = [p.text for p in doc.paragraphs]
     joined = "\n".join(texts)
-    assert "Invoice" in joined
+    assert "Счет №" in joined
     assert f"INV-{project_id:04d}" in joined
     assert "Delivery Package" in joined
     table = doc.tables[0]
     row = [cell.text for cell in table.rows[1].cells]
     assert row[0] == "Delivery Pkg.txt"
     assert row[1] == "sv"
-    assert "Total due:" in joined
+    assert "К оплате:" in joined
     assert "EUR" in joined
 
     # Имя файла — номер инвойса

@@ -35,16 +35,16 @@ def validate_tags(source: str, target: str) -> list[str]:
 
     src_x, tgt_x = extract_x_ids(source), extract_x_ids(target)
     for missing in sorted(src_x - tgt_x):
-        errors.append(f'Missing tag <x id="{missing}"/>')
+        errors.append(f'Отсутствует тег <x id="{missing}"/>')
     for extra in sorted(tgt_x - src_x):
-        errors.append(f'Unexpected tag <x id="{extra}"/>')
+        errors.append(f'Лишний тег <x id="{extra}"/>')
 
     src_g = sorted(g_open_ids_in_order(source))
     tgt_g = sorted(g_open_ids_in_order(target))
     for missing in sorted(set(src_g) - set(tgt_g)):
-        errors.append(f'Missing paired tag <g id="{missing}">')
+        errors.append(f'Отсутствует парный тег <g id="{missing}">')
     for extra in sorted(set(tgt_g) - set(src_g)):
-        errors.append(f'Unexpected paired tag <g id="{extra}">')
+        errors.append(f'Лишний парный тег <g id="{extra}">')
 
     # Баланс и корректность вложенности <g> в переводе.
     stack: list[str] = []
@@ -57,11 +57,11 @@ def validate_tags(source: str, target: str) -> list[str]:
             stack.append(open_id)
         else:
             if not stack:
-                errors.append(f'Unmatched </g> at tag position {position}')
+                errors.append(f'Лишний </g> в позиции тега {position}')
                 break
             stack.pop()
     if stack:
-        errors.append(f'Unclosed <g id="{stack[-1]}">')
+        errors.append(f'Незакрытый <g id="{stack[-1]}">')
 
     return errors
 

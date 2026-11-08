@@ -101,7 +101,7 @@ def test_permissions_and_pattern_validation(client, pm, ann):
         "name": "Broken", "pattern": "(unclosed",
     })
     assert res.status_code == 422, res.text
-    assert "regular expression" in res.json()["detail"].lower()
+    assert "регулярное выражение" in res.json()["detail"]
 
     # /test с невалидным паттерном возвращает ошибку в теле (не 500)
     res = client.post("/api/qa-rules/test", headers=pm,
@@ -150,7 +150,7 @@ def test_required_pattern_warning(client, pm, ann, job):
     _save_target(client, ann, job, "Сохраните свои изменения.")
     report = _qa(client, ann, job)
     warnings = [i for i in _rx_items(report)
-                if i["severity"] == "warning" and "required pattern not found" in i["message"]]
+                if i["severity"] == "warning" and "обязательный паттерн не найден" in i["message"]]
     assert warnings and report["can_submit"]
 
     # С «ёлочками» — чисто

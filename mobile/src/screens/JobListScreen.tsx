@@ -5,6 +5,7 @@ import {
 
 import { api } from '../api';
 import type { Account, Job, WsEvent } from '../api';
+import { STATUS_LABELS } from '../labels';
 import { colors, common, fmtDateTime, statusColors } from '../theme';
 
 interface Props {
@@ -15,13 +16,13 @@ interface Props {
 }
 
 const STATUS_FILTERS: { key: string; label: string }[] = [
-  { key: '', label: 'All' },
-  { key: 'assigned', label: 'Assigned' },
-  { key: 'accepted', label: 'Accepted' },
-  { key: 'in_progress', label: 'In progress' },
-  { key: 'submitted', label: 'Submitted' },
-  { key: 'rework', label: 'Rework' },
-  { key: 'completed', label: 'Completed' },
+  { key: '', label: 'Все' },
+  { key: 'assigned', label: 'Назначено' },
+  { key: 'accepted', label: 'Принято' },
+  { key: 'in_progress', label: 'В работе' },
+  { key: 'submitted', label: 'Сдано' },
+  { key: 'rework', label: 'Доработка' },
+  { key: 'completed', label: 'Завершено' },
 ];
 
 /** FR-02: список заданий с поиском, фильтрами и принятием/отклонением. */
@@ -39,7 +40,7 @@ export default function JobListScreen({ account, wsEvent, onOpenJob, onLogout }:
       setJobs(await api.jobs(account, { status: statusFilter || undefined, q: search || undefined, mine: true }));
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load jobs');
+      setError(err instanceof Error ? err.message : 'Не удалось загрузить задания');
     }
   }, [account, statusFilter, search]);
 
@@ -57,7 +58,7 @@ export default function JobListScreen({ account, wsEvent, onOpenJob, onLogout }:
       await api.acceptJob(account, job.id);
       void load();
     } catch (err) {
-      Alert.alert('Accept failed', err instanceof Error ? err.message : 'Unknown error');
+      Alert.alert('Не удалось принять', err instanceof Error ? err.message : 'Неизвестная ошибка');
     }
   };
 
@@ -69,7 +70,7 @@ export default function JobListScreen({ account, wsEvent, onOpenJob, onLogout }:
       setDeclineReason('');
       void load();
     } catch (err) {
-      Alert.alert('Decline failed', err instanceof Error ? err.message : 'Unknown error');
+      Alert.alert('Не удалось отклонить', err instanceof Error ? err.message : 'Неизвестная ошибка');
     }
   };
 
@@ -80,7 +81,7 @@ export default function JobListScreen({ account, wsEvent, onOpenJob, onLogout }:
       <View style={[common.card, { paddingVertical: 10 }]}>
         <TextInput
           style={common.input}
-          placeholder="Search project or document…"
+          placeholder="Поиск по проекту или документу…"
           value={search}
           onChangeText={setSearch}
         />
@@ -99,15 +100,15 @@ export default function JobListScreen({ account, wsEvent, onOpenJob, onLogout }:
 
       {decliningJob && (
         <View style={common.card}>
-          <Text style={{ fontWeight: '600' }}>Decline “{decliningJob.document_name}” — reason:</Text>
-          <TextInput style={[common.input, { marginTop: 8 }]} value={declineReason} onChangeText={setDeclineReason} placeholder="Reason…" />
+          <Text style={{ fontWeight: '600' }}>Отклонить «{decliningJob.document_name}» — причина:</Text>
+          <TextInput style={[common.input, { marginTop: 8 }]} value={declineReason} onChangeText={setDeclineReason} placeholder="Причина…" />
           <View style={[common.row, { marginTop: 8 }]}>
             <TouchableOpacity style={common.button} onPress={() => setDecliningJob(null)}>
-              <Text style={common.buttonText}>Cancel</Text>
+              <Text style={common.buttonText}>Отмена</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[common.button, common.primaryButton, !declineReason.trim() && common.disabled]}
                               onPress={() => void decline()} disabled={!declineReason.trim()}>
-              <Text style={[common.buttonText, common.primaryButtonText]}>Decline</Text>
+              <Text style={[common.buttonText, common.primaryButtonText]}>Отклонить</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -132,39 +133,39 @@ export default function JobListScreen({ account, wsEvent, onOpenJob, onLogout }:
                   <View style={[styles.fill, { flex: pct }]} />
                   <View style={[styles.rest, { flex: 100 - pct }]} />
                 </View>
-                <Text style={common.small}>{item.confirmed_segments}/{item.total_segments} · {item.total_words}w</Text>
+                <Text style={common.small}>{item.confirmed_segments}/{item.total_segments} · {item.total_words} сл.</Text>
               </View>
               <View style={[common.row, { marginTop: 8 }]}>
                 <View style={[common.chip, { backgroundColor: sc.bg }]}>
-                  <Text style={[common.chipText, { color: sc.fg }]}>{item.status.replace('_', ' ')}</Text>
+                  <Text style={[common.chipText, { color: sc.fg }]}>{STATUS_LABELS[item.status] ?? item.status}</Text>
                 </View>
                 {item.is_overdue && (
                   <View style={[common.chip, { backgroundColor: colors.redBg }]}>
-                    <Text style={[common.chipText, { color: colors.red }]}>overdue</Text>
+                    <Text style={[common.chipText, { color: colors.red }]}>просрочено</Text>
                   </View>
                 )}
                 <View style={common.spacer} />
-                <Text style={common.small}>due {fmtDateTime(item.deadline)}</Text>
+                <Text style={common.small}>срок: {fmtDateTime(item.deadline)}</Text>
               </View>
               {mine && item.status === 'assigned' && (
                 <View style={[common.row, { marginTop: 10 }]}>
                   <TouchableOpacity style={[common.button, common.primaryButton]} onPress={() => void accept(item)}>
-                    <Text style={[common.buttonText, common.primaryButtonText]}>Accept</Text>
+                    <Text style={[common.buttonText, common.primaryButtonText]}>Принять</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={common.button} onPress={() => setDecliningJob(item)}>
-                    <Text style={common.buttonText}>Decline</Text>
+                    <Text style={common.buttonText}>Отклонить</Text>
                   </TouchableOpacity>
                 </View>
               )}
             </TouchableOpacity>
           );
         }}
-        ListEmptyComponent={!jobs.length ? <Text style={styles.empty}>No jobs match the filters.</Text> : null}
+        ListEmptyComponent={!jobs.length ? <Text style={styles.empty}>Нет заданий по этим фильтрам.</Text> : null}
       />
 
       <View style={[common.row, { padding: 10 }]}>
         <TouchableOpacity onPress={onLogout}>
-          <Text style={{ color: colors.muted, fontSize: 13 }}>Log out (switch accounts via chip above)</Text>
+          <Text style={{ color: colors.muted, fontSize: 13 }}>Выйти (аккаунты — чип выше)</Text>
         </TouchableOpacity>
       </View>
     </View>

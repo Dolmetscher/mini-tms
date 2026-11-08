@@ -24,13 +24,13 @@ from ..fuzzy import length_bound_ratio, normalize, similarity_ratio
 
 # (код, подпись, вес) — фиксированный порядок строк отчета.
 _CATEGORIES: list[tuple[str, str, float]] = [
-    ("exact", "Exact (100%)", config.ANALYSIS_EXACT_WEIGHT),
-    ("fuzzy_95_99", "Fuzzy 95–99%", config.ANALYSIS_BANDS[0][2]),
-    ("fuzzy_85_94", "Fuzzy 85–94%", config.ANALYSIS_BANDS[1][2]),
-    ("fuzzy_75_84", "Fuzzy 75–84%", config.ANALYSIS_BANDS[2][2]),
-    ("fuzzy_60_74", "Fuzzy 60–74%", config.ANALYSIS_BANDS[3][2]),
-    ("repetition", "Repetitions", config.ANALYSIS_REPETITION_WEIGHT),
-    ("no_match", "No match", 1.00),
+    ("exact", "Точные (100%)", config.ANALYSIS_EXACT_WEIGHT),
+    ("fuzzy_95_99", "Нечеткие 95–99%", config.ANALYSIS_BANDS[0][2]),
+    ("fuzzy_85_94", "Нечеткие 85–94%", config.ANALYSIS_BANDS[1][2]),
+    ("fuzzy_75_84", "Нечеткие 75–84%", config.ANALYSIS_BANDS[2][2]),
+    ("fuzzy_60_74", "Нечеткие 60–74%", config.ANALYSIS_BANDS[3][2]),
+    ("repetition", "Повторы", config.ANALYSIS_REPETITION_WEIGHT),
+    ("no_match", "Без совпадений", 1.00),
 ]
 _BAND_CODE = {
     f"fuzzy_{low}_{high}": (low, high) for low, high, _ in config.ANALYSIS_BANDS

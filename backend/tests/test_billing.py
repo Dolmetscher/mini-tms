@@ -206,9 +206,9 @@ def test_job_quote_math_and_min_charge(client, pm, ann):
     assert "quote" in res.headers["content-disposition"]
     docx = open_docx(io.BytesIO(res.content))
     texts = [p.text for p in docx.paragraphs]
-    assert any("Translation Quote" in t for t in texts)
-    assert any("Total: 25.00 EUR" in t for t in texts)
-    assert any("Minimum charge applied" in t for t in texts)
+    assert any("Котировка перевода" in t for t in texts)
+    assert any("Итого: 25.00 EUR" in t for t in texts)
+    assert any("Применена минимальная сумма" in t for t in texts)
     assert len(docx.tables[0].rows) == 8  # заголовок + 7 категорий
 
 

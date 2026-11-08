@@ -58,7 +58,7 @@ class LibreTranslateProvider(MTProvider):
                 res.raise_for_status()
                 return res.json()["translatedText"]
         except Exception as exc:  # сеть, таймаут, 4xx/5xx, неверный ответ
-            raise MTError(f"MT provider unavailable: {exc}") from exc
+            raise MTError(f"Провайдер MT недоступен: {exc}") from exc
 
 
 def get_provider() -> MTProvider:

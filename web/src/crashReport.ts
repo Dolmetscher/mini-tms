@@ -45,10 +45,10 @@ function reportOnce(key: string, message: string): void {
 
 function onError(event: ErrorEvent): void {
   const { message, filename, lineno, colno, error } = event;
-  const stack = error instanceof Error && error.stack ? `\nStack: ${truncate(error.stack, STACK_LIMIT)}` : '';
+  const stack = error instanceof Error && error.stack ? `\nСтек: ${truncate(error.stack, STACK_LIMIT)}` : '';
   reportOnce(
     `${message}|${filename}:${lineno}`,
-    `[auto] Uncaught: ${message}\nAt: ${filename}:${lineno}:${colno}${stack}\nUA: ${navigator.userAgent}`,
+    `[auto] Ошибка JS: ${message}\nГде: ${filename}:${lineno}:${colno}${stack}\nUA: ${navigator.userAgent}`,
   );
 }
 
@@ -56,11 +56,11 @@ function onRejection(event: PromiseRejectionEvent): void {
   const { reason } = event;
   let text: string;
   if (reason instanceof ApiError) {
-    text = `[auto] Unhandled API rejection (${reason.status}): ${reason.message}`;
+    text = `[auto] Необработанная ошибка API (${reason.status}): ${reason.message}`;
   } else if (reason instanceof Error) {
-    text = `[auto] Unhandled rejection: ${reason.message}\nStack: ${truncate(reason.stack ?? '', STACK_LIMIT)}`;
+    text = `[auto] Необработанный rejection: ${reason.message}\nСтек: ${truncate(reason.stack ?? '', STACK_LIMIT)}`;
   } else {
-    text = `[auto] Unhandled rejection: ${String(reason)}`;
+    text = `[auto] Необработанный rejection: ${String(reason)}`;
   }
   reportOnce(text, `${text}\nUA: ${navigator.userAgent}`);
 }

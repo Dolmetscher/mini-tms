@@ -98,7 +98,7 @@ def _load_units(content: bytes) -> list[dict]:
     try:
         return xliff_io.load_units(content)
     except etree.XMLSyntaxError as exc:
-        raise ValueError(f"Invalid XLIFF: {exc}") from exc
+        raise ValueError(f"Некорректный XLIFF: {exc}") from exc
 
 
 def import_job_xliff(db: Session, job: models.Job, content: bytes, user_id: int) -> tuple[dict, list[models.Segment]]:

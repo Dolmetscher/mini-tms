@@ -24,21 +24,21 @@ def _compile_or_422(pattern: str, case_sensitive: bool) -> re.Pattern:
     if len(pattern) > config.QA_REGEX_MAX_PATTERN:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Pattern is longer than {config.QA_REGEX_MAX_PATTERN} characters",
+            detail=f"Паттерн длиннее {config.QA_REGEX_MAX_PATTERN} символов",
         )
     try:
         return re.compile(pattern, flags=0 if case_sensitive else re.IGNORECASE)
     except re.error as exc:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid regular expression: {exc}",
+            detail=f"Некорректное регулярное выражение: {exc}",
         ) from exc
 
 
 def _rule_or_404(ctx: Context, rule_id: int) -> models.QaRegexRule:
     rule = ctx.db.get(models.QaRegexRule, rule_id)
     if rule is None or rule.org_id != ctx.org_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="QA rule not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="QA-правило не найдено")
     return rule
 
 

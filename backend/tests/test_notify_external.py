@@ -133,7 +133,7 @@ def test_email_delivered_on_assignment(client, pm, ann, smtp_calls, smtp_enabled
     assert len(smtp_calls["smtp"]) == 1
     to_email, subject, body = smtp_calls["smtp"][0]
     assert to_email == "ann@example.com"
-    assert "New job assigned" in subject
+    assert "Назначено новое задание" in subject
     assert "n.txt" in body  # документ из payload — в тексте письма
 
 
@@ -144,7 +144,7 @@ def test_telegram_delivered_on_assignment(client, pm, ann, smtp_calls, tg_enable
     assert len(smtp_calls["tg"]) == 1
     chat_id, text = smtp_calls["tg"][0]
     assert chat_id == "123456789"
-    assert "New job assigned" in text
+    assert "Назначено новое задание" in text
 
 
 def test_no_delivery_when_channel_disabled(client, pm, ann, smtp_calls):
@@ -169,5 +169,5 @@ def test_render_contains_payload_fields():
         "job_id": 7, "document": "manual.docx", "deadline": "2026-01-01T10:00:00",
         "offset": "24h",
     })
-    assert subject == "Mini-TMS: Deadline reminder"
+    assert subject == "Mini-TMS: Напоминание о дедлайне"
     assert "manual.docx" in body and "24h" in body and "#7" in body

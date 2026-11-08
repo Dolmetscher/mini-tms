@@ -65,7 +65,7 @@ def get_current_user(
 ) -> User:
     credentials_exc = HTTPException(
         status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid or expired token",
+        detail="Недействительный или истекший токен",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:

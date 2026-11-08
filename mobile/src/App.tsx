@@ -164,7 +164,7 @@ export default function App() {
         </TouchableOpacity>
         <TouchableOpacity style={[styles.tab, screen.name === 'notifications' && styles.tabActive]}
                           onPress={() => setScreen({ name: 'notifications' })}>
-          <Text style={styles.tabText}>Bell</Text>
+          <Text style={styles.tabText}>🔔</Text>
         </TouchableOpacity>
         {isManager && (
           <TouchableOpacity style={[styles.tab, screen.name === 'pm' && styles.tabActive]}

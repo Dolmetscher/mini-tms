@@ -23,18 +23,18 @@ export default function Header() {
   });
 
   const changePassword = async () => {
-    const current = window.prompt('Current password:');
+    const current = window.prompt('Текущий пароль:');
     if (!current) return;
-    const next = window.prompt('New password (min 4 chars, must differ):');
+    const next = window.prompt('Новый пароль (мин. 4 символа, должен отличаться):');
     if (!next) return;
     try {
       const { access_token } = await api.changePassword(current, next);
       // Смена пароля отзывает все токены: сохраняем свежий, чтобы сессия
       // продолжилась без повторного входа.
       storeToken(access_token);
-      window.alert('Password updated.');
+      window.alert('Пароль обновлен.');
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : 'Password change failed');
+      window.alert(err instanceof Error ? err.message : 'Не удалось сменить пароль');
     }
   };
 
@@ -42,18 +42,18 @@ export default function Header() {
     <header className="topbar">
       <Link to="/jobs" className="brand">Mini&#8209;TMS</Link>
       <nav className="nav">
-        <Link to="/jobs" className={location.pathname.startsWith('/jobs') ? 'active' : ''}>Jobs</Link>
+        <Link to="/jobs" className={location.pathname.startsWith('/jobs') ? 'active' : ''}>Задания</Link>
         {activeOrg && activeOrg.role !== 'translator' && (
           <>
-            <Link to="/projects" className={location.pathname.startsWith('/projects') ? 'active' : ''}>Projects</Link>
+            <Link to="/projects" className={location.pathname.startsWith('/projects') ? 'active' : ''}>Проекты</Link>
             <Link to="/resources" className={location.pathname.startsWith('/resources') ? 'active' : ''}>TM / TB</Link>
-            <Link to="/rates" className={location.pathname.startsWith('/rates') ? 'active' : ''}>Rates</Link>
-            <Link to="/reports" className={location.pathname.startsWith('/reports') ? 'active' : ''}>Reports</Link>
-            <Link to="/feedback" className={location.pathname.startsWith('/feedback') ? 'active' : ''}>Feedback</Link>
+            <Link to="/rates" className={location.pathname.startsWith('/rates') ? 'active' : ''}>Ставки</Link>
+            <Link to="/reports" className={location.pathname.startsWith('/reports') ? 'active' : ''}>Отчеты</Link>
+            <Link to="/feedback" className={location.pathname.startsWith('/feedback') ? 'active' : ''}>Отзывы</Link>
           </>
         )}
         <Link to="/notifications" className={location.pathname.startsWith('/notifications') ? 'active' : ''}>
-          Bell{unread > 0 ? ` (${unread})` : ''}
+          Уведомления{unread > 0 ? ` (${unread})` : ''}
         </Link>
       </nav>
       <span className="spacer" />
@@ -62,7 +62,7 @@ export default function Header() {
           className="org-select"
           value={activeOrg.org_id}
           onChange={(e) => setActiveOrgId(Number(e.target.value))}
-          title="Active organization"
+          title="Активная организация"
         >
           {memberships.map((m) => (
             <option key={m.org_id} value={m.org_id}>{m.org_name}</option>
@@ -71,8 +71,8 @@ export default function Header() {
       )}
       <span className={`role-badge role-${activeOrg?.role}`}>{activeOrg?.role}</span>
       <span className="muted">{user?.username}</span>
-      <button className="btn small" title="Change your password" onClick={() => void changePassword()}>Password</button>
-      <button className="btn small" onClick={logout}>Log out</button>
+      <button className="btn small" title="Сменить свой пароль" onClick={() => void changePassword()}>Пароль</button>
+      <button className="btn small" onClick={logout}>Выйти</button>
     </header>
   );
 }

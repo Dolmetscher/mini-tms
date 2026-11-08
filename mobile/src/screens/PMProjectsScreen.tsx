@@ -4,6 +4,7 @@ import * as DocumentPicker from 'expo-document-picker';
 
 import { api } from '../api';
 import type { Account, DocumentInfo, Job, Member, Project, WsEvent } from '../api';
+import { PROC_STATUS_LABELS, STATUS_LABELS } from '../labels';
 import { colors, common, fmtDateTime, statusColors } from '../theme';
 
 /** FR-10/FR-11/FR-14: проекты со смартфона — создание, загрузка файлов, назначение, приемка. */
@@ -37,7 +38,7 @@ export default function PMProjectsScreen({ account, wsEvent }: { account: Accoun
       }
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Load failed');
+      setError(err instanceof Error ? err.message : 'Не удалось загрузить');
     }
   }, [account, selectedProject]);
 
@@ -71,13 +72,13 @@ export default function PMProjectsScreen({ account, wsEvent }: { account: Accoun
       setInstructions('');
       void load();
     } catch (err) {
-      Alert.alert('Create failed', err instanceof Error ? err.message : 'Unknown error');
+      Alert.alert('Не удалось создать', err instanceof Error ? err.message : 'Неизвестная ошибка');
     }
   };
 
   const uploadDocument = async () => {
     if (selectedProject === null) {
-      Alert.alert('Select a project first');
+      Alert.alert('Сначала выберите проект');
       return;
     }
     try {
@@ -95,7 +96,7 @@ export default function PMProjectsScreen({ account, wsEvent }: { account: Accoun
       setDocuments((prev) => [doc, ...prev]);
       void load();
     } catch (err) {
-      Alert.alert('Upload failed', err instanceof Error ? err.message : 'Unknown error');
+      Alert.alert('Не удалось загрузить', err instanceof Error ? err.message : 'Неизвестная ошибка');
     }
   };
 
@@ -104,7 +105,7 @@ export default function PMProjectsScreen({ account, wsEvent }: { account: Accoun
       await fn();
       void load();
     } catch (err) {
-      Alert.alert('Action failed', err instanceof Error ? err.message : 'Unknown error');
+      Alert.alert('Действие не удалось', err instanceof Error ? err.message : 'Неизвестная ошибка');
     }
   };
 
@@ -116,17 +117,17 @@ export default function PMProjectsScreen({ account, wsEvent }: { account: Accoun
 
       {/* Создание проекта (FR-10) */}
       <View style={common.card}>
-        <Text style={{ fontWeight: 'bold', marginBottom: 6 }}>New project</Text>
-        <TextInput style={common.input} placeholder="Project name…" value={name} onChangeText={setName} />
+        <Text style={{ fontWeight: 'bold', marginBottom: 6 }}>Новый проект</Text>
+        <TextInput style={common.input} placeholder="Название проекта…" value={name} onChangeText={setName} />
         <View style={[common.row, { marginTop: 8 }]}>
-          <Text style={common.small}>source</Text>
+          <Text style={common.small}>исходный</Text>
           <TextInput style={[common.input, { width: 60 }]} value={source} onChangeText={setSource} />
-          <Text style={common.small}>targets (,)</Text>
+          <Text style={common.small}>целевые (,)</Text>
           <TextInput style={[common.input, { flex: 1 }]} value={targets} onChangeText={setTargets} />
         </View>
         <TextInput
           style={[common.input, { marginTop: 8 }]}
-          placeholder="Instructions…"
+          placeholder="Инструкции…"
           value={instructions} onChangeText={setInstructions}
         />
         <TouchableOpacity
@@ -134,13 +135,13 @@ export default function PMProjectsScreen({ account, wsEvent }: { account: Accoun
           disabled={!name.trim() || !targets.trim()}
           onPress={() => void createProject()}
         >
-          <Text style={[common.buttonText, common.primaryButtonText]}>Create project</Text>
+          <Text style={[common.buttonText, common.primaryButtonText]}>Создать проект</Text>
         </TouchableOpacity>
       </View>
 
       {/* Выбор проекта + загрузка документа */}
       <View style={common.card}>
-        <Text style={{ fontWeight: 'bold', marginBottom: 6 }}>Project</Text>
+        <Text style={{ fontWeight: 'bold', marginBottom: 6 }}>Проект</Text>
         <View style={[common.row, common.wrap]}>
           {projects.map((p) => (
             <TouchableOpacity
@@ -153,11 +154,11 @@ export default function PMProjectsScreen({ account, wsEvent }: { account: Accoun
               </Text>
             </TouchableOpacity>
           ))}
-          {projects.length === 0 && <Text style={common.small}>No projects yet.</Text>}
+          {projects.length === 0 && <Text style={common.small}>Пока нет проектов.</Text>}
         </View>
         {selectedProject !== null && (
           <TouchableOpacity style={[common.button, { marginTop: 8 }]} onPress={() => void uploadDocument()}>
-            <Text style={common.buttonText}>Upload document (TXT / DOCX / XLIFF)</Text>
+            <Text style={common.buttonText}>Загрузить документ (TXT / DOCX / XLIFF)</Text>
           </TouchableOpacity>
         )}
         {documents.map((d) => {
@@ -165,7 +166,7 @@ export default function PMProjectsScreen({ account, wsEvent }: { account: Accoun
           return (
             <View key={d.id} style={[common.row, { marginTop: 6 }]}>
               <View style={[common.chip, { backgroundColor: badge.bg }]}>
-                <Text style={[common.chipText, { color: badge.fg }]}>{d.processing_status}</Text>
+                <Text style={[common.chipText, { color: badge.fg }]}>{PROC_STATUS_LABELS[d.processing_status] ?? d.processing_status}</Text>
               </View>
               <Text style={[common.small, { flex: 1 }]} numberOfLines={1}>
                 {d.name}{d.processing_error ? ` — ${d.processing_error}` : ''}
@@ -188,44 +189,44 @@ export default function PMProjectsScreen({ account, wsEvent }: { account: Accoun
                 <View style={common.row}>
                   <Text style={{ fontWeight: '600', flex: 1 }}>{item.document_name} → {item.target_lang}</Text>
                   <View style={[common.chip, { backgroundColor: badge.bg }]}>
-                    <Text style={[common.chipText, { color: badge.fg }]}>{item.status.replace('_', ' ')}</Text>
+                    <Text style={[common.chipText, { color: badge.fg }]}>{STATUS_LABELS[item.status] ?? item.status}</Text>
                   </View>
                 </View>
                 <Text style={common.small}>
-                  {item.assignee?.username ?? 'unassigned'} · {item.confirmed_segments}/{item.total_segments} · due {fmtDateTime(item.deadline)}
+                  {item.assignee?.username ?? 'не назначено'} · {item.confirmed_segments}/{item.total_segments} · срок: {fmtDateTime(item.deadline)}
                 </Text>
                 <View style={[common.row, common.wrap, { marginTop: 8 }]}>
                   {['unassigned', 'assigned', 'declined'].includes(item.status) && (
                     <TouchableOpacity style={[common.button, common.primaryButton]}
                                       onPress={() => setAssignJob(item)}>
-                      <Text style={[common.buttonText, common.primaryButtonText]}>Assign</Text>
+                      <Text style={[common.buttonText, common.primaryButtonText]}>Назначить</Text>
                     </TouchableOpacity>
                   )}
                   {item.status === 'submitted' && (
                     <>
                       <TouchableOpacity style={[common.button, common.primaryButton]}
                                         onPress={() => void act(() => api.completeJob(account, item.id))}>
-                        <Text style={[common.buttonText, common.primaryButtonText]}>Complete</Text>
+                        <Text style={[common.buttonText, common.primaryButtonText]}>Завершить</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={common.button} onPress={() => setReturnJob(item)}>
-                        <Text style={common.buttonText}>Return</Text>
+                        <Text style={common.buttonText}>Вернуть</Text>
                       </TouchableOpacity>
                     </>
                   )}
                   {!['completed', 'canceled'].includes(item.status) && (
                     <TouchableOpacity style={common.button}
-                                      onPress={() => Alert.alert('Cancel job', 'Cancel this job?', [
-                                        { text: 'No' },
-                                        { text: 'Yes', style: 'destructive', onPress: () => void act(() => api.cancelJob(account, item.id)) },
+                                      onPress={() => Alert.alert('Отмена задания', 'Отменить это задание?', [
+                                        { text: 'Нет' },
+                                        { text: 'Да', style: 'destructive', onPress: () => void act(() => api.cancelJob(account, item.id)) },
                                       ])}>
-                      <Text style={common.buttonText}>Cancel</Text>
+                      <Text style={common.buttonText}>Отменить</Text>
                     </TouchableOpacity>
                   )}
                 </View>
               </View>
             );
           }}
-          ListEmptyComponent={<Text style={styles.empty}>Upload a document to create jobs.</Text>}
+          ListEmptyComponent={<Text style={styles.empty}>Загрузите документ, чтобы создать задания.</Text>}
         />
       )}
 
@@ -233,9 +234,9 @@ export default function PMProjectsScreen({ account, wsEvent }: { account: Accoun
       <Modal visible={assignJob !== null} transparent animationType="fade" onRequestClose={() => setAssignJob(null)}>
         <View style={styles.modalBackdrop}>
           <View style={[common.card, styles.modalCard]}>
-            <Text style={{ fontSize: 16, fontWeight: 'bold' }}>Assign translator</Text>
+            <Text style={{ fontSize: 16, fontWeight: 'bold' }}>Назначить переводчика</Text>
             <Text style={common.small}>{assignJob?.document_name} → {assignJob?.target_lang}</Text>
-            <Text style={styles.conflictTitle}>Individual deadline (optional, UTC)</Text>
+            <Text style={styles.conflictTitle}>Индивидуальный дедлайн (опционально, UTC)</Text>
             <TextInput
               style={common.input}
               placeholder="2026-12-31T18:00:00"
@@ -263,10 +264,10 @@ export default function PMProjectsScreen({ account, wsEvent }: { account: Accoun
                   <Text>{item.user.username}</Text>
                 </TouchableOpacity>
               )}
-              ListEmptyComponent={<Text style={common.small}>No translators in organization.</Text>}
+              ListEmptyComponent={<Text style={common.small}>В организации нет переводчиков.</Text>}
             />
             <TouchableOpacity style={[common.button, { marginTop: 8 }]} onPress={() => setAssignJob(null)}>
-              <Text style={common.buttonText}>Close</Text>
+              <Text style={common.buttonText}>Закрыть</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -276,15 +277,15 @@ export default function PMProjectsScreen({ account, wsEvent }: { account: Accoun
       <Modal visible={returnJob !== null} transparent animationType="fade" onRequestClose={() => setReturnJob(null)}>
         <View style={styles.modalBackdrop}>
           <View style={[common.card, styles.modalCard]}>
-            <Text style={{ fontSize: 16, fontWeight: 'bold' }}>Return to rework</Text>
+            <Text style={{ fontSize: 16, fontWeight: 'bold' }}>Вернуть на доработку</Text>
             <TextInput
               style={[common.input, { marginTop: 8 }]}
-              placeholder="Comment for the translator…"
+              placeholder="Комментарий для переводчика…"
               value={returnComment} onChangeText={setReturnComment} multiline
             />
             <View style={[common.row, { marginTop: 10 }]}>
               <TouchableOpacity style={common.button} onPress={() => { setReturnJob(null); setReturnComment(''); }}>
-                <Text style={common.buttonText}>Cancel</Text>
+                <Text style={common.buttonText}>Отмена</Text>
               </TouchableOpacity>
               <View style={common.spacer} />
               <TouchableOpacity
@@ -297,7 +298,7 @@ export default function PMProjectsScreen({ account, wsEvent }: { account: Accoun
                   setReturnComment('');
                 }}
               >
-                <Text style={[common.buttonText, common.primaryButtonText]}>Return</Text>
+                <Text style={[common.buttonText, common.primaryButtonText]}>Вернуть</Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -1,35 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { api, downloadJobExport } from '../api/client';
+import { SEVERITY_LABELS, STATUS_LABELS, fmtDateTime } from '../api/labels';
 import type { Job, JobDetail, LQAReport, WsEvent } from '../api/types';
 import { useAuth } from '../state/AuthContext';
 import { useUpdates } from '../ws/useUpdates';
 
-const STATUS_LABELS: Record<string, string> = {
-  unassigned: 'unassigned', assigned: 'assigned', declined: 'declined',
-  accepted: 'accepted', in_progress: 'in progress', submitted: 'submitted',
-  rework: 'rework', completed: 'completed', canceled: 'canceled',
-};
-
 const LQA_CATEGORIES: { value: string; label: string }[] = [
-  { value: 'accuracy', label: 'Accuracy — смысл' },
-  { value: 'terminology', label: 'Terminology — термины' },
-  { value: 'fluency', label: 'Fluency — грамотность' },
-  { value: 'style', label: 'Style — стиль' },
-  { value: 'locale', label: 'Locale — локализация' },
-  { value: 'consistency', label: 'Consistency — согласованность' },
+  { value: 'accuracy', label: 'Точность (смысл)' },
+  { value: 'terminology', label: 'Терминология (термины)' },
+  { value: 'fluency', label: 'Беглость (грамотность)' },
+  { value: 'style', label: 'Стиль' },
+  { value: 'locale', label: 'Локализация' },
+  { value: 'consistency', label: 'Согласованность' },
 ];
 const LQA_SEVERITIES: { value: string; label: string; penalty: number }[] = [
-  { value: 'minor', label: 'Minor', penalty: 1 },
-  { value: 'major', label: 'Major', penalty: 5 },
-  { value: 'critical', label: 'Critical', penalty: 10 },
+  { value: 'minor', label: 'Незначительная', penalty: 1 },
+  { value: 'major', label: 'Существенная', penalty: 5 },
+  { value: 'critical', label: 'Критичная', penalty: 10 },
 ];
-
-function fmtDeadline(value: string | null): string {
-  if (!value) return '—';
-  const d = new Date(value.endsWith('Z') || value.includes('+') ? value : value + 'Z');
-  return d.toLocaleString();
-}
 
 export default function JobsPage() {
   const { user, token, activeOrg } = useAuth();
@@ -55,7 +44,7 @@ export default function JobsPage() {
     api
       .jobs({ status: statusFilter || undefined, q: search || undefined, mine: mineOnly || undefined })
       .then(setJobs)
-      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load jobs'));
+      .catch((err) => setError(err instanceof Error ? err.message : 'Не удалось загрузить задания'));
   }, [statusFilter, search, mineOnly]);
 
   useEffect(() => {
@@ -84,7 +73,7 @@ export default function JobsPage() {
       setLqaDetail(detail);
       if (detail.segments.length) setLqaSegment(detail.segments[0].id);
     } catch (err) {
-      setLqaError(err instanceof Error ? err.message : 'Failed to load LQA report');
+      setLqaError(err instanceof Error ? err.message : 'Не удалось загрузить LQA-отчет');
     }
   }, []);
 
@@ -98,7 +87,7 @@ export default function JobsPage() {
       setLqaComment('');
       setLqaReport(await api.jobLqa(lqaJob.id));
     } catch (err) {
-      setLqaError(err instanceof Error ? err.message : 'Failed to mark error');
+      setLqaError(err instanceof Error ? err.message : 'Не удалось разметить ошибку');
     } finally {
       setLqaBusy(false);
     }
@@ -110,7 +99,7 @@ export default function JobsPage() {
       await api.deleteLqaError(lqaJob.id, errorId);
       setLqaReport(await api.jobLqa(lqaJob.id));
     } catch (err) {
-      setLqaError(err instanceof Error ? err.message : 'Failed to remove error');
+      setLqaError(err instanceof Error ? err.message : 'Не удалось снять ошибку');
     }
   };
 
@@ -125,7 +114,7 @@ export default function JobsPage() {
       await fn();
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Action failed');
+      setError(err instanceof Error ? err.message : 'Действие не удалось');
     }
   };
 
@@ -133,19 +122,19 @@ export default function JobsPage() {
     <>
       <section className="card row wrap">
         <input
-          placeholder="Search project or document…"
+          placeholder="Поиск по проекту или документу…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ minWidth: 220 }}
         />
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="">All statuses</option>
+          <option value="">Все статусы</option>
           {Object.entries(STATUS_LABELS).map(([value, label]) => (
             <option key={value} value={value}>{label}</option>
           ))}
         </select>
         <label className="muted small-text">
-          <input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} /> My jobs
+          <input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} /> Только мои
         </label>
       </section>
 
@@ -153,15 +142,15 @@ export default function JobsPage() {
 
       {declining !== null && (
         <section className="card row">
-          <span>Decline reason:</span>
-          <input value={declineReason} onChange={(e) => setDeclineReason(e.target.value)} placeholder="Reason…" />
-          <button className="btn" onClick={() => { setDeclining(null); setDeclineReason(''); }}>Cancel</button>
+          <span>Причина отклонения:</span>
+          <input value={declineReason} onChange={(e) => setDeclineReason(e.target.value)} placeholder="Причина…" />
+          <button className="btn" onClick={() => { setDeclining(null); setDeclineReason(''); }}>Отмена</button>
           <button
             className="btn primary"
             disabled={!declineReason.trim()}
             onClick={() => act(() => api.declineJob(declining, declineReason)).then(() => setDeclining(null))}
           >
-            Decline job
+            Отклонить задание
           </button>
         </section>
       )}
@@ -170,8 +159,8 @@ export default function JobsPage() {
         <table className="jobs-table">
           <thead>
             <tr>
-              <th>Job</th><th>Languages</th><th>Deadline</th><th>Progress</th>
-              <th>Status</th><th>Assignee</th><th>Actions</th>
+              <th>Задание</th><th>Языки</th><th>Дедлайн</th><th>Прогресс</th>
+              <th>Статус</th><th>Исполнитель</th><th>Действия</th>
             </tr>
           </thead>
           <tbody>
@@ -187,15 +176,15 @@ export default function JobsPage() {
                   </td>
                   <td className="muted">{job.source_lang} → {job.target_lang}</td>
                   <td className={job.is_overdue ? 'overdue' : ''}>
-                    {fmtDeadline(job.deadline)}
-                    {job.is_overdue && <div className="small-text overdue">overdue</div>}
+                    {fmtDateTime(job.deadline)}
+                    {job.is_overdue && <div className="small-text overdue">просрочено</div>}
                   </td>
                   <td>
                     <div className="progress-row">
                       <div className="progress-track">
                         <div className="progress-fill" style={{ width: `${pct}%` }} />
                       </div>
-                      <span className="muted small-text">{job.confirmed_segments}/{job.total_segments} · {job.total_words}w</span>
+                      <span className="muted small-text">{job.confirmed_segments}/{job.total_segments} · {job.total_words} сл.</span>
                     </div>
                   </td>
                   <td><span className={`status-chip st-${job.status}`}>{STATUS_LABELS[job.status]}</span></td>
@@ -203,16 +192,16 @@ export default function JobsPage() {
                   <td className="actions-cell">
                     {mine && job.status === 'assigned' && (
                       <>
-                        <button className="btn small" onClick={() => act(() => api.acceptJob(job.id))}>Accept</button>
-                        <button className="btn small" onClick={() => setDeclining(job.id)}>Decline</button>
+                        <button className="btn small" onClick={() => act(() => api.acceptJob(job.id))}>Принять</button>
+                        <button className="btn small" onClick={() => setDeclining(job.id)}>Отклонить</button>
                       </>
                     )}
-                    {editable && <Link className="btn small" to={`/editor/${job.id}`}>Open</Link>}
+                    {editable && <Link className="btn small" to={`/editor/${job.id}`}>Открыть</Link>}
                     {mine && ['accepted', 'in_progress', 'rework'].includes(job.status) && (
-                      <Link className="btn small" to={`/editor/${job.id}`}>Editor</Link>
+                      <Link className="btn small" to={`/editor/${job.id}`}>Редактор</Link>
                     )}
                     {isManager && (job.status === 'submitted' || job.status === 'completed') && (
-                      <button className="btn small" onClick={() => act(() => downloadJobExport(job.id))}>Download</button>
+                      <button className="btn small" onClick={() => act(() => downloadJobExport(job.id))}>Скачать</button>
                     )}
                     {isManager && ['submitted', 'rework', 'completed'].includes(job.status) && (
                       <button className="btn small" onClick={() => void openLqa(job)}
@@ -220,13 +209,13 @@ export default function JobsPage() {
                         LQA review
                       </button>
                     )}
-                    {isManager && <Link className="btn small" to={`/projects/${job.project_id}`}>Dashboard</Link>}
+                    {isManager && <Link className="btn small" to={`/projects/${job.project_id}`}>Панель</Link>}
                   </td>
                 </tr>
               );
             })}
             {jobs.length === 0 && (
-              <tr><td colSpan={7} className="muted center">No jobs match the filters.</td></tr>
+              <tr><td colSpan={7} className="muted center">Нет заданий по этим фильтрам.</td></tr>
             )}
           </tbody>
         </table>
@@ -236,7 +225,7 @@ export default function JobsPage() {
           <div className="modal card lqa-modal" onClick={(e) => e.stopPropagation()}>
             <h3 className="panel-title">LQA — оценка качества: {lqaJob.document_name}</h3>
             {lqaError && <div className="alert">{lqaError}</div>}
-            {!lqaReport && <div className="muted">Loading…</div>}
+            {!lqaReport && <div className="muted">Загрузка…</div>}
             {lqaReport && (
               <>
                 <div className="lqa-score-row">
@@ -246,7 +235,7 @@ export default function JobsPage() {
                   </div>
                   <div className="lqa-score-meta">
                     <span className={`status-chip ${lqaReport.passed ? 'st-translated' : 'st-new'}`}>
-                      {lqaReport.passed ? 'PASS' : 'FAIL'} (порог {lqaReport.pass_score})
+                      {lqaReport.passed ? 'ЗАЧЕТ' : 'НЕ ЗАЧЕТ'} (порог {lqaReport.pass_score})
                     </span>
                     <span className="muted small-text">
                       {lqaReport.error_count} ошибок · {lqaReport.penalty_points} штрафных баллов · {lqaReport.words} слов ·
@@ -269,8 +258,8 @@ export default function JobsPage() {
                   {lqaReport.errors.map((e) => (
                     <div key={e.id} className={`qa-item ${e.severity === 'critical' ? 'error' : e.severity === 'major' ? 'warning' : ''}`}>
                       <span className="muted">#{e.position + 1}</span>
-                      <span className={`status-chip sev-${e.severity}`}>{e.severity} · {e.penalty} б.</span>
-                      <span className={`status-chip st-drafted`}>{e.category}</span>
+                      <span className={`status-chip sev-${e.severity}`}>{SEVERITY_LABELS[e.severity] ?? e.severity} · {e.penalty} б.</span>
+                      <span className={`status-chip st-drafted`}>{LQA_CATEGORIES.find((c) => c.value === e.category)?.label ?? e.category}</span>
                       <span className="lqa-comment">{e.comment}</span>
                       <span className="muted small-text">{e.author.username}</span>
                       <button className="btn small" title="Снять ошибку (разметка ошибочна)"
@@ -312,7 +301,7 @@ export default function JobsPage() {
                       />
                       <button className="btn primary" disabled={!lqaSegment || !lqaComment.trim() || lqaBusy}
                               onClick={() => void addLqaError()}>
-                        {lqaBusy ? '…' : 'Mark error'}
+                        {lqaBusy ? '…' : 'Разметить ошибку'}
                       </button>
                     </div>
                   </div>
@@ -320,7 +309,7 @@ export default function JobsPage() {
               </>
             )}
             <div className="row" style={{ marginTop: 10 }}>
-              <button className="btn" onClick={() => setLqaJob(null)}>Close</button>
+              <button className="btn" onClick={() => setLqaJob(null)}>Закрыть</button>
             </div>
           </div>
         </div>

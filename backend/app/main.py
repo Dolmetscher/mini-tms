@@ -179,7 +179,7 @@ if WEB_DIST.is_dir():
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa(full_path: str):
         if full_path.startswith(("api/", "ws")):
-            raise HTTPException(status_code=404, detail="Not found")
+            raise HTTPException(status_code=404, detail="Не найдено")
         candidate = (WEB_DIST / full_path).resolve()
         if full_path and candidate.is_file() and str(candidate).startswith(_dist_root):
             return FileResponse(candidate)

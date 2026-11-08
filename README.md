@@ -100,6 +100,10 @@ cd web && npm install && npm run dev     # http://localhost:5173
 ```
 `VITE_API_BASE` — адрес сервера (по умолчанию http://localhost:8000).
 
+Интерфейс (SPA, мобильный клиент, сообщения QA, письма/Telegram-уведомления,
+DOCX-котировки и счета) — на русском; в `<html lang="ru">` и подписях статусов
+используется единый словарь (`web/src/api/labels.ts`, `mobile/src/labels.ts`).
+
 ### 3. Android
 Готовый APK: `mini-tms-debug.apk` (корень) или
 `mobile/android/app/build/outputs/apk/debug/app-debug.apk`.

@@ -78,13 +78,13 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     if wait:
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many failed login attempts; try again later",
+            detail="Слишком много неудачных попыток входа; попробуйте позже",
             headers={"Retry-After": str(wait)},
         )
     user = db.query(User).filter(User.username == body.username).first()
     if user is None or not verify_password(body.password, user.password_hash):
         _register_failure(key)
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Неверное имя пользователя или пароль")
     _clear_failures(key)
     memberships = (
         db.query(Membership, Organization)
@@ -138,12 +138,12 @@ def update_contacts(
     if body.email is not None:
         email = body.email.strip()
         if email and not _EMAIL_RE.match(email):
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid email address")
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Некорректный email")
         user.email = email or None
     if body.telegram_chat_id is not None:
         tg = body.telegram_chat_id.strip()
         if tg and not _TG_CHAT_RE.match(tg):
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid Telegram chat id")
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Некорректный Telegram chat id")
         user.telegram_chat_id = tg or None
     db.commit()
     db.refresh(user)
@@ -163,11 +163,11 @@ def change_password(
     без повторного входа; остальные сессии этого пользователя сбрасываются.
     """
     if not verify_password(body.current_password, user.password_hash):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Текущий пароль неверен")
     if body.current_password == body.new_password:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="New password must be different from the current one",
+            detail="Новый пароль должен отличаться от текущего",
         )
     user.password_hash = hash_password(body.new_password)
     user.pwd_ver += 1

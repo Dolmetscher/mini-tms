@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError, downloadBilingualExport, downloadJobXliffHandoff } from '../api/client';
+import { MATCH_TYPE_LABELS, STATUS_LABELS, TR_STATUS_LABELS, fmtDateTime } from '../api/labels';
 import type {
   AnalysisReport, JobDetail, LockConflictBody, MTSuggestion, QAReport, Segment, SegmentLockInfo,
   SegmentNote, SegmentRevision, TBHit, TMSuggestion, WsEvent,
@@ -61,8 +62,7 @@ function renderSourceWithTerms(text: string, hits: TBHit[]): ReactNode[] {
 }
 
 function fmtNoteTime(value: string): string {
-  const d = new Date(value.endsWith('Z') || value.includes('+') ? value : value + 'Z');
-  return d.toLocaleString();
+  return fmtDateTime(value);
 }
 
 export default function EditorPage() {
@@ -135,7 +135,7 @@ export default function EditorPage() {
       setLocks(data.locks ?? []); // серверная истина: свежие локи задания
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load job');
+      setError(err instanceof Error ? err.message : 'Не удалось загрузить задание');
     }
   }, [jobId]);
 
@@ -179,7 +179,7 @@ export default function EditorPage() {
               ...prev.filter((l) => l.segment_id !== segment.id),
               { segment_id: segment.id, user: detail.locked_by, locked_at: detail.locked_at },
             ]);
-            setNotice(`Segment is being edited by ${detail.locked_by.username} — read-only until they finish.`);
+            setNotice(`Сегмент редактирует ${detail.locked_by.username} — до завершения он только для чтения.`);
           }
           setSaveState('error');
           return false;
@@ -420,7 +420,7 @@ export default function EditorPage() {
   }, [locks]);
 
   if (!token) return <Navigate to="/login" replace />;
-  if (!job) return <div className="muted center">{error || 'Loading…'}</div>;
+  if (!job) return <div className="muted center">{error || 'Загрузка…'}</div>;
 
   const canEdit = canEditJob;
   // Чужой лок на активном сегменте: редактор read-only до снятия/TTL
@@ -512,7 +512,7 @@ export default function EditorPage() {
     try {
       setMt(await api.mtSuggest(job.id, active.id));
     } catch (err) {
-      setMt({ text: err instanceof Error ? err.message : 'MT unavailable', provider: 'unavailable' });
+      setMt({ text: err instanceof Error ? err.message : 'MT недоступен', provider: 'unavailable' });
     } finally {
       setMtBusy(false);
     }
@@ -541,7 +541,7 @@ export default function EditorPage() {
     try {
       setQaReport(await api.jobQa(job.id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'QA failed');
+      setError(err instanceof Error ? err.message : 'Не удалось выполнить QA');
     }
   };
 
@@ -549,7 +549,7 @@ export default function EditorPage() {
     try {
       setAnalysis(await api.jobAnalysis(jobId));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Analysis failed');
+      setError(err instanceof Error ? err.message : 'Не удалось выполнить анализ');
     }
   };
 
@@ -559,13 +559,13 @@ export default function EditorPage() {
       const r = await api.preTranslateJob(jobId, minScore);
       setPreTrOpen(false);
       setNotice(
-        `Pre-translate: ${r.filled_exact} exact + ${r.filled_fuzzy} fuzzy from TM, ` +
-        `${r.propagated} propagated repetitions${r.skipped ? `, ${r.skipped} left untranslated` : ''}. ` +
-        'Drafts are not confirmed — review each one.',
+        `Предперевод: ${r.filled_exact} точных + ${r.filled_fuzzy} нечетких из TM, ` +
+        `${r.propagated} повторов распространено${r.skipped ? `, ${r.skipped} оставлено без перевода` : ''}. ` +
+        'Черновики не подтверждены — проверьте каждый.',
       );
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Pre-translate failed');
+      setError(err instanceof Error ? err.message : 'Не удалось выполнить предперевод');
     } finally {
       setPreTrBusy(false);
     }
@@ -585,29 +585,29 @@ export default function EditorPage() {
         done += 1;
       }
       setReplaceOpen(false);
-      setNotice(`Replaced in ${done} segment(s). Changed segments lose confirmation.`);
+      setNotice(`Заменено в сегментах: ${done}. Измененные сегменты теряют подтверждение.`);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Replace failed');
+      setError(err instanceof Error ? err.message : 'Не удалось заменить');
     } finally {
       setReplaceBusy(false);
     }
   };
 
   const runPseudo = async (overwrite: boolean) => {
-    if (overwrite && !window.confirm('Overwrite ALL segment translations with pseudo-text?')) return;
+    if (overwrite && !window.confirm('Перезаписать ВСЕ переводы сегментов псевдо-текстом?')) return;
     setPseudoBusy(true);
     try {
       const r = await api.pseudoTranslateJob(jobId, overwrite);
       setPseudoOpen(false);
       setNotice(
-        `Pseudo-translate: ${r.filled} segment(s) filled` +
-        `${r.skipped_nonempty ? `, ${r.skipped_nonempty} translated skipped` : ''}. ` +
-        'Tags and numbers are kept — export the file to verify the pipeline.',
+        `Псевдо-перевод: заполнено сегментов ${r.filled}` +
+        `${r.skipped_nonempty ? `, пропущено переведенных ${r.skipped_nonempty}` : ''}. ` +
+        'Теги и числа сохранены — экспортируйте файл, чтобы проверить пайплайн.',
       );
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Pseudo-translate failed');
+      setError(err instanceof Error ? err.message : 'Не удалось выполнить псевдо-перевод');
     } finally {
       setPseudoBusy(false);
     }
@@ -618,13 +618,13 @@ export default function EditorPage() {
     try {
       const r = await api.importJobXliff(jobId, file);
       setNotice(
-        `XLIFF imported: ${r.updated} updated, ${r.confirmed} confirmed` +
-        `${r.skipped_locked ? `, ${r.skipped_locked} locked by another editor` : ''}` +
-        `${r.skipped ? `, ${r.skipped} skipped` : ''}.`,
+        `XLIFF импортирован: обновлено ${r.updated}, подтверждено ${r.confirmed}` +
+        `${r.skipped_locked ? `, заблокировано другим редактором: ${r.skipped_locked}` : ''}` +
+        `${r.skipped ? `, пропущено ${r.skipped}` : ''}.`,
       );
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'XLIFF import failed');
+      setError(err instanceof Error ? err.message : 'Не удалось импортировать XLIFF');
     } finally {
       setHandoffBusy(false);
     }
@@ -638,7 +638,7 @@ export default function EditorPage() {
       setNotedIds((prev) => new Set(prev).add(active.id));
       setNoteText('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add note');
+      setError(err instanceof Error ? err.message : 'Не удалось добавить комментарий');
     }
   };
 
@@ -648,7 +648,7 @@ export default function EditorPage() {
       setQaReport(null);
       navigate('/jobs');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Submit failed');
+      setError(err instanceof Error ? err.message : 'Не удалось сдать задание');
       setQaReport(null);
     }
   };
@@ -656,8 +656,8 @@ export default function EditorPage() {
   const contextPrev = active ? job.segments.find((s) => s.position === active.position - 1) : null;
   const contextNext = active ? job.segments.find((s) => s.position === active.position + 1) : null;
   const saveLabel: Record<SaveState, string> = {
-    saved: '✓ Saved', dirty: 'Editing…', saving: 'Saving…',
-    offline: '⚠ No connection — draft kept locally', error: '⚠ Save error',
+    saved: '✓ Сохранено', dirty: 'Правка…', saving: 'Сохранение…',
+    offline: '⚠ Нет связи — черновик сохранен локально', error: '⚠ Ошибка сохранения',
   };
 
   return (
@@ -665,34 +665,34 @@ export default function EditorPage() {
       <section className="card row wrap">
         <span className="brand">{job.document_name}</span>
         <span className="muted">{job.project_name} · {job.source_lang} → {job.target_lang}</span>
-        <span className={`status-chip st-${job.status}`}>{job.status.replace('_', ' ')}</span>
+        <span className={`status-chip st-${job.status}`}>{STATUS_LABELS[job.status] ?? job.status}</span>
         <span className="muted small-text">
-          {job.confirmed_segments}/{job.total_segments} confirmed · {job.total_words} words
+          {job.confirmed_segments}/{job.total_segments} подтверждено · {job.total_words} слов
         </span>
-        {job.is_overdue && <span className="status-chip st-new overdue">overdue</span>}
+        {job.is_overdue && <span className="status-chip st-new overdue">просрочено</span>}
         <span className="spacer" />
         <button
           className="btn small"
-          title="Two-column DOCX (source | translation) for review"
+          title="Двуязычный DOCX (исходник | перевод) для ревью"
           onClick={() => downloadBilingualExport(jobId).catch((e: Error) => setError(e.message))}
         >
-          Bilingual DOCX
+          Двуязычный DOCX
         </button>
         <button
           className="btn small"
-          title="XLIFF 1.2 handoff package for external CAT tools (Trados/memoQ/OmegaT)"
+          title="XLIFF 1.2 пакет для внешних CAT-инструментов (Trados/memoQ/OmegaT)"
           onClick={() => downloadJobXliffHandoff(jobId).catch((e: Error) => setError(e.message))}
         >
-          XLIFF handoff
+          XLIFF-хендофф
         </button>
         {canEdit && (
           <button
             className="btn small"
             disabled={handoffBusy}
-            title="Merge an XLIFF returned by the external translator"
+            title="Слейте XLIFF, возвращенный внешним переводчиком"
             onClick={() => handoffInputRef.current?.click()}
           >
-            {handoffBusy ? 'Importing…' : 'Import XLIFF'}
+            {handoffBusy ? 'Импорт…' : 'Импорт XLIFF'}
           </button>
         )}
         <input
@@ -707,46 +707,46 @@ export default function EditorPage() {
       </section>
 
       {job.rework_comment && (
-        <div className="alert">Returned to rework: {job.rework_comment}</div>
+        <div className="alert">Возвращено на доработку: {job.rework_comment}</div>
       )}
       {error && <div className="alert">{error}</div>}
       {notice && <div className="notice">{notice}</div>}
 
       <section className="card row wrap">
         <input
-          placeholder="Search segments…" value={search}
+          placeholder="Поиск по сегментам…" value={search}
           onChange={(e) => setSearch(e.target.value)} style={{ minWidth: 200 }}
         />
         {(['all', 'untranslated', 'unconfirmed'] as Filter[]).map((f) => (
           <button key={f} className={`btn small ${filter === f ? 'primary' : ''}`} onClick={() => setFilter(f)}>
-            {f === 'all' ? 'All' : f === 'untranslated' ? 'Untranslated' : 'Unconfirmed'}
+            {f === 'all' ? 'Все' : f === 'untranslated' ? 'Непереведенные' : 'Неподтвержденные'}
           </button>
         ))}
         <button className={`btn small ${filter === 'qa' ? 'primary' : ''}`} onClick={() => { setFilter(filter === 'qa' ? 'all' : 'qa'); void openQa(); }}>
-          QA issues
+          Замечания QA
         </button>
-        <button className="btn small" onClick={() => void openAnalysis()}>Analysis</button>
+        <button className="btn small" onClick={() => void openAnalysis()}>Анализ</button>
         {canEdit && (
-          <button className="btn small" onClick={() => { setNotice(''); setPreTrOpen(true); }}>Pre-translate…</button>
+          <button className="btn small" onClick={() => { setNotice(''); setPreTrOpen(true); }}>Предперевод…</button>
         )}
         {canEdit && (
           <button className="btn small" onClick={() => { setNotice(''); setPseudoOpen(true); }}
-                  title="Fill segments with synthetic text to test export">Pseudo-fill…</button>
+                  title="Заполнить сегменты синтетическим текстом для проверки экспорта">Псевдо-заполнение…</button>
         )}
         {canEdit && (
-          <button className="btn small" onClick={() => { setNotice(''); setReplaceOpen(true); }} title="Ctrl+H">Replace…</button>
+          <button className="btn small" onClick={() => { setNotice(''); setReplaceOpen(true); }} title="Ctrl+H">Замена…</button>
         )}
         <span className="spacer" />
         {canEdit && active && (
           <>
-            <button className="btn small" onClick={undo} disabled={!undoStack.length}>Undo</button>
-            <button className="btn small" onClick={redo} disabled={!redoStack.length}>Redo</button>
-            <button className="btn small" onClick={() => goto(-1)}>&#8592; Prev</button>
-            <button className="btn small" onClick={() => goto(1)}>Next &#8594;</button>
+            <button className="btn small" onClick={undo} disabled={!undoStack.length}>Отменить</button>
+            <button className="btn small" onClick={redo} disabled={!redoStack.length}>Вернуть</button>
+            <button className="btn small" onClick={() => goto(-1)}>&#8592; Пред.</button>
+            <button className="btn small" onClick={() => goto(1)}>След. &#8594;</button>
           </>
         )}
         {canEdit && (
-          <button className="btn small primary" onClick={() => void openQa()}>Submit job…</button>
+          <button className="btn small primary" onClick={() => void openQa()}>Сдать задание…</button>
         )}
       </section>
 
@@ -765,28 +765,28 @@ export default function EditorPage() {
                 <span className="seg-texts">
                   <span className="seg-source">{seg.source_text}</span>
                   <span className={`seg-target ${!seg.target_text ? 'empty' : ''}`}>
-                    {seg.target_text || '— not translated —'}
+                    {seg.target_text || '— не переведено —'}
                   </span>
                 </span>
                 <span className="seg-badges">
                   {foreignLock && (
-                    <span className="status-chip st-new" title={`${foreignLock.user.username} is editing this segment`}>
+                    <span className="status-chip st-new" title={`${foreignLock.user.username} редактирует этот сегмент`}>
                       🔒 {foreignLock.user.username}
                     </span>
                   )}
-                  {seg.is_mandatory && <span className="status-chip st-new">mand.</span>}
+                  {seg.is_mandatory && <span className="status-chip st-new">обяз.</span>}
                   {notedIds.has(seg.id) && (
-                    <span className="status-chip st-drafted note-chip" title="Has comments">💬</span>
+                    <span className="status-chip st-drafted note-chip" title="Есть комментарии">💬</span>
                   )}
                   {seg.confirmed
-                    ? <span className="status-chip st-translated">confirmed</span>
-                    : <span className={`status-chip st-${seg.translation_status}`}>{seg.translation_status}</span>}
+                    ? <span className="status-chip st-translated">подтверждено</span>
+                    : <span className={`status-chip st-${seg.translation_status}`}>{TR_STATUS_LABELS[seg.translation_status] ?? seg.translation_status}</span>}
                 </span>
               </button>
             );
           })}
           {visibleSegments.length === 0 && (
-            <div className="muted center" style={{ padding: 20 }}>No segments match the filter.</div>
+            <div className="muted center" style={{ padding: 20 }}>Нет сегментов по фильтру.</div>
           )}
         </section>
 
@@ -806,13 +806,13 @@ export default function EditorPage() {
                 <div className="tm-list">
                   {suggestions.map((s, i) => (
                     <button key={i} className="tm-item" disabled={!canEdit}
-                            onClick={() => onChangeDraft(s.target_suggestion)} title="Click to insert">
+                            onClick={() => onChangeDraft(s.target_suggestion)} title="Нажмите, чтобы вставить">
                       <span className={`tm-score ${s.match_percentage === 100 ? 'exact' : ''}`}>
                         {s.match_percentage}%
                       </span>
                       <span className="tm-body">
                         {s.target_suggestion}
-                        <span className="muted small-text"> · {s.tm_name} · {s.match_type}</span>
+                        <span className="muted small-text"> · {s.tm_name} · {MATCH_TYPE_LABELS[s.match_type] ?? s.match_type}</span>
                       </span>
                     </button>
                   ))}
@@ -822,7 +822,7 @@ export default function EditorPage() {
               <div className="tm-list">
                 {uniqueTags(active.source_text).map((tag) => (
                   <button key={tag} className="tag-chip" disabled={!canEdit}
-                          onClick={() => insertTag(tag)} title="Insert tag">
+                          onClick={() => insertTag(tag)} title="Вставить тег">
                     {tag}
                   </button>
                 ))}
@@ -830,7 +830,7 @@ export default function EditorPage() {
 
               {tbHits.length > 0 && (
                 <div className="tb-list">
-                  <div className="muted small-text tb-hint">Terms found in this segment (highlighted in the source):</div>
+                  <div className="muted small-text tb-hint">Термины из этого сегмента (выделены в исходнике):</div>
                   {tbHits.map((h, i) => (
                     <div key={i} className={`tb-item ${h.status === 'forbidden' ? 'tb-forbidden' : ''}`}>
                       <strong>{h.term}</strong> → {h.translation}
@@ -839,7 +839,7 @@ export default function EditorPage() {
                       {canEdit && (
                         <button className="btn small" style={{ marginLeft: 6 }}
                                 onClick={() => insertTag(h.translation)}>
-                          Insert
+                          Вставить
                         </button>
                       )}
                     </div>
@@ -849,7 +849,7 @@ export default function EditorPage() {
 
               <div className="notes-panel">
                 <div className="row" style={{ alignItems: 'baseline' }}>
-                  <span className="muted small-text">Comments ({notes.length}) — обсуждение сегмента:</span>
+                  <span className="muted small-text">Комментарии ({notes.length}) — обсуждение сегмента:</span>
                 </div>
                 {notes.map((n) => (
                   <div key={n.id} className={`note-item ${n.author.username === (user?.username ?? '') ? 'mine' : ''}`}>
@@ -861,31 +861,31 @@ export default function EditorPage() {
                   </div>
                 ))}
                 {notes.length === 0 && (
-                  <div className="muted small-text">No comments yet. Ask about ambiguity, trademarks, context…</div>
+                  <div className="muted small-text">Комментариев нет. Спросите о неоднозначности, товарных знаках, контексте…</div>
                 )}
                 <div className="row" style={{ marginTop: 6 }}>
                   <input
-                    placeholder="Add a comment for this segment…"
+                    placeholder="Комментарий к сегменту…"
                     value={noteText}
                     onChange={(e) => setNoteText(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') void addNote(); }}
                     style={{ flex: 1 }}
                   />
                   <button className="btn small" disabled={!noteText.trim()} onClick={() => void addNote()}>
-                    Add
+                    Добавить
                   </button>
                 </div>
               </div>
 
               <div className="history-panel">
                 <button className="btn small" onClick={() => void toggleHistory()}>
-                  {historyOpen ? '▾' : '▸'} History {history.length ? `(${history.length})` : ''}
+                  {historyOpen ? '▾' : '▸'} История {history.length ? `(${history.length})` : ''}
                 </button>
                 {historyOpen && (
                   <>
                     <div className="muted small-text">
-                      Track changes of this segment — every saved edit, author and time.
-                      {canEdit && ' Restore puts an old version back into the draft.'}
+                      История правок сегмента — каждое сохранение, автор и время.
+                      {canEdit && ' «Вернуть» кладет старую версию в черновик.'}
                     </div>
                     {history.map((rev) => (
                       <div key={rev.id} className={`note-item ${rev.author.username === (user?.username ?? '') ? 'mine' : ''}`}>
@@ -901,14 +901,14 @@ export default function EditorPage() {
                               title="Вернуть эту версию в черновик"
                               onClick={() => onChangeDraft(rev.target_text)}
                             >
-                              Restore
+                              Вернуть
                             </button>
                           )}
                         </div>
                       </div>
                     ))}
                     {history.length === 0 && (
-                      <div className="muted small-text">No edits recorded yet for this segment.</div>
+                      <div className="muted small-text">Правок для этого сегмента пока нет.</div>
                     )}
                   </>
                 )}
@@ -917,8 +917,8 @@ export default function EditorPage() {
               {canEdit ? (
                 blockedBy ? (
                   <div className="alert">
-                    🔒 {blockedBy.user.username} is editing this segment — it stays read-only
-                    while they work. The lock is released automatically after inactivity.
+                    🔒 {blockedBy.user.username} редактирует этот сегмент — он остается только для чтения,
+                    пока они работают. Лок снимется автоматически после неактивности.
                   </div>
                 ) : (
                   <>
@@ -934,35 +934,35 @@ export default function EditorPage() {
                         // Ctrl+H — найти и заменить по всем сегментам задания
                         if (e.ctrlKey && (e.key === 'h' || e.key === 'H')) { e.preventDefault(); setReplaceOpen(true); }
                       }}
-                      placeholder="Type translation here…"
+                      placeholder="Введите перевод…"
                       rows={4}
                       autoFocus
                     />
                     <div className="row wrap">
-                      <button className="btn primary" onClick={() => void confirmAndNext()}>Confirm & Next</button>
+                      <button className="btn primary" onClick={() => void confirmAndNext()}>Подтвердить и далее</button>
                       <span className="muted small-text">Ctrl+Enter · Ctrl/Alt+↑/↓ · Alt+T · Ctrl+S</span>
                       <span className="spacer" />
                       <button className="btn small" onClick={() => void runMt()} disabled={mtBusy}>
-                        {mtBusy ? 'MT…' : 'Get MT'}
+                        {mtBusy ? 'MT…' : 'Запросить MT'}
                       </button>
                     </div>
                   </>
                 )
               ) : (
-                <div className="muted">Segment is read-only in status “{job.status}”.</div>
+                <div className="muted">Сегмент только для чтения в статусе «{STATUS_LABELS[job.status] ?? job.status}».</div>
               )}
               {canEdit && (
                 <>
                   {mt && (
                     <div className="mt-box">
-                      <div className="muted small-text">Machine translation ({mt.provider}) — post-edit before use:</div>
+                      <div className="muted small-text">Машинный перевод ({mt.provider}) — вычитайте перед использованием:</div>
                       <div>{mt.text}</div>
-                      <button className="btn small" onClick={() => onChangeDraft(mt.text)}>Insert MT</button>
+                      <button className="btn small" onClick={() => onChangeDraft(mt.text)}>Вставить MT</button>
                     </div>
                   )}
                   <div className="row" style={{ marginTop: 8 }}>
                     <input
-                      placeholder={concSide === 'source' ? 'Concordance (source)…' : 'Concordance (target)…'}
+                      placeholder={concSide === 'source' ? 'Конкорданс (исходник)…' : 'Конкорданс (перевод)…'}
                       value={concordance}
                       onChange={(e) => setConcordance(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') void runConcordance(); }}
@@ -972,13 +972,13 @@ export default function EditorPage() {
                       className={`btn small ${concSide === 'source' ? 'primary' : ''}`}
                       title="Поиск по исходникам TM (fuzzy)"
                       onClick={() => { setConcSide('source'); void runConcordanceSide('source'); }}
-                    >Src</button>
+                    >Исх.</button>
                     <button
                       className={`btn small ${concSide === 'target' ? 'primary' : ''}`}
                       title="Поиск по переводам TM: как это уже переводилось"
                       onClick={() => { setConcSide('target'); void runConcordanceSide('target'); }}
-                    >Tgt</button>
-                    <button className="btn small" onClick={() => void runConcordance()}>Search TM</button>
+                    >Пер.</button>
+                    <button className="btn small" onClick={() => void runConcordance()}>Искать в TM</button>
                   </div>
                   {concordanceResults.length > 0 && (
                     <div className="tm-list">
@@ -998,9 +998,9 @@ export default function EditorPage() {
             </>
           ) : (
             <div className="muted center panel-empty">
-              Select a segment to translate.
+              Выберите сегмент для перевода.
               {job.confirmed_segments === job.total_segments && job.total_segments > 0 && (
-                <div className="done-note">✓ All mandatory segments confirmed. Run QA and submit.</div>
+                <div className="done-note">✓ Все обязательные сегменты подтверждены. Прогоните QA и сдавайте.</div>
               )}
             </div>
           )}
@@ -1010,11 +1010,11 @@ export default function EditorPage() {
       {qaReport && (
         <div className="modal-backdrop" onClick={() => setQaReport(null)}>
           <div className="modal card" onClick={(e) => e.stopPropagation()}>
-            <h3 className="panel-title">Quality check</h3>
+            <h3 className="panel-title">Проверка качества</h3>
             <p className={qaReport.can_submit ? 'done-note' : 'alert'}>
               {qaReport.can_submit
-                ? 'No blocking errors. Ready to submit.'
-                : `${qaReport.blocking_count} blocking error(s), ${qaReport.warning_count} warning(s).`}
+                ? 'Блокирующих ошибок нет. Можно сдавать.'
+                : `Блокирующих ошибок: ${qaReport.blocking_count}, предупреждений: ${qaReport.warning_count}.`}
             </p>
             <div className="qa-list">
               {qaReport.items.map((item, i) => (
@@ -1032,13 +1032,13 @@ export default function EditorPage() {
                   {item.message}
                 </div>
               ))}
-              {qaReport.items.length === 0 && <div className="muted">No issues found.</div>}
+              {qaReport.items.length === 0 && <div className="muted">Замечаний нет.</div>}
             </div>
             <div className="row" style={{ marginTop: 10 }}>
-              <button className="btn" onClick={() => setQaReport(null)}>Close</button>
+              <button className="btn" onClick={() => setQaReport(null)}>Закрыть</button>
               <span className="spacer" />
               <button className="btn primary" disabled={!qaReport.can_submit} onClick={() => void doSubmit()}>
-                Submit job
+                Сдать задание
               </button>
             </div>
           </div>
@@ -1048,15 +1048,15 @@ export default function EditorPage() {
       {conflict && (
         <div className="modal-backdrop" onClick={() => setConflict(null)}>
           <div className="modal card" onClick={(e) => e.stopPropagation()}>
-            <h3 className="panel-title">Version conflict</h3>
-            <p className="muted">The segment was changed on the server. Choose which version to keep.</p>
+            <h3 className="panel-title">Конфликт версий</h3>
+            <p className="muted">Сегмент изменен на сервере. Выберите, какую версию оставить.</p>
             <div className="conflict-grid">
               <div>
-                <strong>Server version</strong>
+                <strong>Версия сервера</strong>
                 <div className="conflict-text">{conflict.server.target_text || '—'}</div>
               </div>
               <div>
-                <strong>Your draft</strong>
+                <strong>Ваш черновик</strong>
                 <div className="conflict-text">{draft || '—'}</div>
               </div>
             </div>
@@ -1071,7 +1071,7 @@ export default function EditorPage() {
                 localStorage.removeItem(draftKey(conflict.server.id));
                 setConflict(null);
               }}>
-                Keep server version
+                Оставить версию сервера
               </button>
               <span className="spacer" />
               <button className="btn primary" onClick={() => {
@@ -1079,7 +1079,7 @@ export default function EditorPage() {
                 setConflict(null);
                 void persist({ ...server }, draft);
               }}>
-                Overwrite with mine
+                Перезаписать моей
               </button>
             </div>
           </div>
@@ -1089,18 +1089,18 @@ export default function EditorPage() {
       {analysis && (
         <div className="modal-backdrop" onClick={() => setAnalysis(null)}>
           <div className="modal card" onClick={(e) => e.stopPropagation()}>
-            <h3 className="panel-title">Volume analysis — {analysis.source_lang} → {analysis.target_lang}</h3>
+            <h3 className="panel-title">Анализ объема — {analysis.source_lang} → {analysis.target_lang}</h3>
             <p className="muted small-text">
-              Mandatory segments vs project TMs{analysis.tm_names.length ? ` (${analysis.tm_names.join(', ')})` : ''}.
-              Weighted words = payable volume estimate.
+              Обязательные сегменты против TM проекта{analysis.tm_names.length ? ` (${analysis.tm_names.join(', ')})` : ''}.
+              Взвешенные слова = оценка оплачиваемого объема.
             </p>
             <table className="jobs-table analysis-table">
               <thead>
                 <tr>
-                  <th>Category</th>
-                  <th>Segments</th>
-                  <th>Words</th>
-                  <th>Weighted</th>
+                  <th>Категория</th>
+                  <th>Сегменты</th>
+                  <th>Слова</th>
+                  <th>Взвешено</th>
                 </tr>
               </thead>
               <tbody>
@@ -1113,7 +1113,7 @@ export default function EditorPage() {
                   </tr>
                 ))}
                 <tr className="totals">
-                  <td>Total</td>
+                  <td>Итого</td>
                   <td>{analysis.segments}</td>
                   <td>{analysis.words}</td>
                   <td>{analysis.weighted_words}</td>
@@ -1121,7 +1121,7 @@ export default function EditorPage() {
               </tbody>
             </table>
             <div className="row" style={{ marginTop: 10 }}>
-              <button className="btn" onClick={() => setAnalysis(null)}>Close</button>
+              <button className="btn" onClick={() => setAnalysis(null)}>Закрыть</button>
             </div>
           </div>
         </div>
@@ -1130,22 +1130,22 @@ export default function EditorPage() {
       {preTrOpen && (
         <div className="modal-backdrop" onClick={() => setPreTrOpen(false)}>
           <div className="modal card" onClick={(e) => e.stopPropagation()}>
-            <h3 className="panel-title">Pre-translate from TM</h3>
+            <h3 className="panel-title">Предперевод из TM</h3>
             <p className="muted">
-              Fills empty segments with best TM matches and propagated repetitions.
-              Results are unconfirmed drafts — review each one before confirming.
+              Заполняет пустые сегменты лучшими совпадениями TM и распространенными повторами.
+              Результаты — неподтвержденные черновики: проверьте каждый перед подтверждением.
             </p>
             <div className="row" style={{ marginTop: 10 }}>
               <button className="btn primary" disabled={preTrBusy} onClick={() => void runPreTranslate(100)}>
-                Exact only (100%)
+                Только точные (100%)
               </button>
               <span className="spacer" />
               <button className="btn" disabled={preTrBusy} onClick={() => void runPreTranslate(60)}>
-                Exact + fuzzy (≥60%)
+                Точные + нечеткие (≥60%)
               </button>
             </div>
             <p className="muted small-text" style={{ marginTop: 10 }}>
-              Conservative choice: exact only. Fuzzy drafts need more post-editing.
+              Консервативный вариант — только точные. Нечеткие черновики требуют больше пост-правки.
             </p>
           </div>
         </div>
@@ -1154,22 +1154,23 @@ export default function EditorPage() {
       {pseudoOpen && (
         <div className="modal-backdrop" onClick={() => setPseudoOpen(false)}>
           <div className="modal card" onClick={(e) => e.stopPropagation()}>
-            <h3 className="panel-title">Pseudo-translate (pipeline test)</h3>
+            <h3 className="panel-title">Псевдо-перевод (тест пайплайна)</h3>
             <p className="muted">
-              Fills segments with synthetic text — accented letters, ~40% longer, tags/numbers/placeholders
-              kept. Use it to verify export and layout <b>before</b> the translation starts.
+              Заполняет сегменты синтетическим текстом — акцентированные буквы, ~40% длиннее,
+              теги/числа/плейсхолдеры сохранены. Используйте, чтобы проверить экспорт и верстку
+              <b>до</b> начала перевода.
             </p>
             <div className="row" style={{ marginTop: 10 }}>
               <button className="btn primary" disabled={pseudoBusy} onClick={() => void runPseudo(false)}>
-                Fill empty only
+                Только пустые
               </button>
               <span className="spacer" />
               <button className="btn" disabled={pseudoBusy} onClick={() => void runPseudo(true)}>
-                Overwrite all
+                Перезаписать все
               </button>
             </div>
             <p className="muted small-text" style={{ marginTop: 10 }}>
-              Results are unconfirmed drafts — QA still requires confirmation per segment.
+              Результаты — неподтвержденные черновики: QA по-прежнему требует подтверждения по сегментам.
             </p>
           </div>
         </div>
@@ -1178,32 +1179,32 @@ export default function EditorPage() {
       {replaceOpen && (
         <div className="modal-backdrop" onClick={() => setReplaceOpen(false)}>
           <div className="modal card" onClick={(e) => e.stopPropagation()}>
-            <h3 className="panel-title">Find &amp; replace in translations</h3>
-            <p className="muted">Applies to target texts of all segments of this job.</p>
+            <h3 className="panel-title">Найти и заменить в переводах</h3>
+            <p className="muted">Применяется к переводам всех сегментов этого задания.</p>
             <div className="column" style={{ gap: 8, marginTop: 8 }}>
               <input
-                placeholder="Find in translations…"
+                placeholder="Найти в переводах…"
                 value={findText}
                 onChange={(e) => setFindText(e.target.value)}
                 autoFocus
               />
               <input
-                placeholder="Replace with…"
+                placeholder="Заменить на…"
                 value={replaceText}
                 onChange={(e) => setReplaceText(e.target.value)}
               />
             </div>
             <p className="muted small-text">
               {findText
-                ? `${replaceCount} segment(s) contain “${findText}”. Changed segments lose confirmation.`
-                : 'Type text to search for.'}
+                ? `Сегментов с «${findText}»: ${replaceCount}. Измененные сегменты теряют подтверждение.`
+                : 'Введите текст для поиска.'}
             </p>
             <div className="row" style={{ marginTop: 10 }}>
-              <button className="btn" onClick={() => setReplaceOpen(false)}>Cancel</button>
+              <button className="btn" onClick={() => setReplaceOpen(false)}>Отмена</button>
               <span className="spacer" />
               <button className="btn primary" disabled={!findText || replaceCount === 0 || replaceBusy}
                       onClick={() => void applyReplace()}>
-                {replaceBusy ? 'Replacing…' : 'Replace all'}
+                {replaceBusy ? 'Замена…' : 'Заменить все'}
               </button>
             </div>
           </div>

@@ -3,18 +3,8 @@ import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native
 
 import { api } from '../api';
 import type { Account, AppNotification, WsEvent } from '../api';
+import { NOTIFICATION_TYPE_LABELS } from '../labels';
 import { colors, common, fmtDateTime } from '../theme';
-
-const TYPE_LABELS: Record<string, string> = {
-  job_assigned: 'New job assigned',
-  job_accepted: 'Job accepted',
-  job_declined: 'Job declined',
-  job_submitted: 'Job submitted',
-  job_returned: 'Job returned to rework',
-  job_reassigned: 'Job reassigned',
-  job_canceled: 'Job canceled',
-  deadline_reminder: 'Deadline reminder',
-};
 
 /** §8: внутренний центр уведомлений; тап открывает задание в активном аккаунте (FR-01). */
 export default function NotificationsScreen(
@@ -46,7 +36,7 @@ export default function NotificationsScreen(
     if (typeof n.payload['reason'] === 'string') parts.push(n.payload['reason']);
     if (typeof n.payload['comment'] === 'string') parts.push(n.payload['comment']);
     if (n.type === 'deadline_reminder' && typeof n.payload['offset'] === 'string') {
-      parts.push(`deadline in ${n.payload['offset']}`);
+      parts.push(`дедлайн через ${n.payload['offset']}`);
     }
     return parts.join(' — ');
   };
@@ -54,11 +44,11 @@ export default function NotificationsScreen(
   return (
     <View style={{ flex: 1 }}>
       <View style={[common.row, { paddingHorizontal: 12, marginBottom: 8 }]}>
-        <Text style={{ fontSize: 16, fontWeight: 'bold' }}>Notifications</Text>
+        <Text style={{ fontSize: 16, fontWeight: 'bold' }}>Уведомления</Text>
         <View style={common.spacer} />
         <TouchableOpacity style={common.button}
                           onPress={() => void api.markAllNotificationsRead(account).then(load)}>
-          <Text style={common.buttonText}>Mark all read</Text>
+          <Text style={common.buttonText}>Прочитать все</Text>
         </TouchableOpacity>
       </View>
 
@@ -71,11 +61,11 @@ export default function NotificationsScreen(
           return (
             <View style={[common.card, item.read_at && styles.read]}>
               <View style={common.row}>
-                <Text style={{ fontWeight: '600', flex: 1 }}>{TYPE_LABELS[item.type] ?? item.type}</Text>
+                <Text style={{ fontWeight: '600', flex: 1 }}>{NOTIFICATION_TYPE_LABELS[item.type] ?? item.type}</Text>
                 {!item.read_at && (
                   <TouchableOpacity style={common.button}
                                     onPress={() => void api.markNotificationRead(account, item.id).then(load)}>
-                    <Text style={common.buttonText}>Read</Text>
+                    <Text style={common.buttonText}>Прочитано</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -85,14 +75,14 @@ export default function NotificationsScreen(
                 <View style={common.spacer} />
                 {jobId && (
                   <TouchableOpacity onPress={() => onOpenJob(jobId)}>
-                    <Text style={{ color: colors.accent, fontWeight: '600' }}>Open job</Text>
+                    <Text style={{ color: colors.accent, fontWeight: '600' }}>Открыть задание</Text>
                   </TouchableOpacity>
                 )}
               </View>
             </View>
           );
         }}
-        ListEmptyComponent={<Text style={styles.empty}>No notifications.</Text>}
+        ListEmptyComponent={<Text style={styles.empty}>Уведомлений нет.</Text>}
       />
     </View>
   );

@@ -37,14 +37,14 @@ def naive_utc(dt: datetime) -> datetime:
 def job_or_404(ctx: Context, job_id: int) -> models.Job:
     job = ctx.db.get(models.Job, job_id)
     if job is None or job.org_id != ctx.org_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Job not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Задание не найдено")
     return job
 
 
 def project_or_404(ctx: Context, project_id: int) -> models.Project:
     project = ctx.db.get(models.Project, project_id)
     if project is None or project.org_id != ctx.org_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Project not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Проект не найден")
     return project
 
 
@@ -57,7 +57,7 @@ def ensure_job_access(ctx: Context, job: models.Job) -> None:
     if can_manage(ctx):
         return
     if job.assignee_id != ctx.user_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Job is not assigned to you")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Задание не назначено вам")
 
 
 def ensure_project_access(ctx: Context, project: models.Project) -> None:
@@ -71,7 +71,7 @@ def ensure_project_access(ctx: Context, project: models.Project) -> None:
     )
     if has_job is None:
         raise HTTPException(
-            status.HTTP_403_FORBIDDEN, detail="No jobs in this project for you"
+            status.HTTP_403_FORBIDDEN, detail="В этом проекте для вас нет заданий"
         )
 
 

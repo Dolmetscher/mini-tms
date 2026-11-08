@@ -17,7 +17,7 @@ export default function RatesPage() {
   const [minCharge, setMinCharge] = useState('0');
 
   const load = useCallback(() => {
-    api.rateCards().then(setCards).catch((e) => setError(e instanceof Error ? e.message : 'Load failed'));
+    api.rateCards().then(setCards).catch((e) => setError(e instanceof Error ? e.message : 'Не удалось загрузить'));
   }, []);
 
   useEffect(() => { void load(); }, [load]);
@@ -30,7 +30,7 @@ export default function RatesPage() {
       load();
       if (ok) setNotice(ok);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Action failed');
+      setError(err instanceof Error ? err.message : 'Действие не удалось');
     }
   };
 
@@ -41,7 +41,7 @@ export default function RatesPage() {
         name: name.trim(), source_lang: source, target_lang: target,
         currency, min_charge: Number(minCharge) || 0,
       }),
-      `Rate card "${name.trim()}" created with default rates — adjust them inline.`,
+      `Прайс-лист «${name.trim()}» создан со ставками по умолчанию — правьте инлайн.`,
     ).then(() => setName(''));
   };
 
@@ -50,11 +50,11 @@ export default function RatesPage() {
     const value = Number(raw.replace(',', '.'));
     if (!Number.isFinite(value) || value === prev || value < 0) return;
     if (field === 'min_charge') {
-      void act(() => api.updateRateCard(card.id, { min_charge: value }), `Updated ${card.name}: min charge ${value}`);
+      void act(() => api.updateRateCard(card.id, { min_charge: value }), `Обновлено ${card.name}: мин. сумма ${value}`);
     } else {
       void act(
         () => api.updateRateCard(card.id, { rates: { [field]: value } }),
-        `Updated ${card.name}: ${RATE_CATEGORY_LABELS[field] ?? field} = ${value}`,
+        `Обновлено ${card.name}: ${RATE_CATEGORY_LABELS[field] ?? field} = ${value}`,
       );
     }
   };
@@ -62,23 +62,23 @@ export default function RatesPage() {
   return (
     <>
       <section className="card row wrap">
-        <input placeholder="New rate card name…" value={name} onChange={(e) => setName(e.target.value)} />
-        <input value={source} onChange={(e) => setSource(e.target.value)} style={{ width: 60 }} title="source lang" />
+        <input placeholder="Название нового прайс-листа…" value={name} onChange={(e) => setName(e.target.value)} />
+        <input value={source} onChange={(e) => setSource(e.target.value)} style={{ width: 60 }} title="исходный язык" />
         <span className="muted">→</span>
-        <input value={target} onChange={(e) => setTarget(e.target.value)} style={{ width: 60 }} title="target lang" />
-        <input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} style={{ width: 70 }} title="currency" />
-        <input value={minCharge} onChange={(e) => setMinCharge(e.target.value)} style={{ width: 110 }} title="minimum charge" placeholder="min charge" />
-        <button className="btn small primary" disabled={!name.trim()} onClick={create}>Create</button>
+        <input value={target} onChange={(e) => setTarget(e.target.value)} style={{ width: 60 }} title="целевой язык" />
+        <input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} style={{ width: 70 }} title="валюта" />
+        <input value={minCharge} onChange={(e) => setMinCharge(e.target.value)} style={{ width: 110 }} title="минимальная сумма" placeholder="мин. сумма" />
+        <button className="btn small primary" disabled={!name.trim()} onClick={create}>Создать</button>
       </section>
 
       {error && <div className="alert">{error}</div>}
       {notice && <div className="notice">{notice}</div>}
 
       <section className="card">
-        <h3 className="panel-title">Rate cards — {cards.length}</h3>
+        <h3 className="panel-title">Прайс-листы — {cards.length}</h3>
         <p className="muted small-text">
-          Per-word rates by analysis category (Trados-style: the discount lives in the category rate).
-          Quote = Σ words × rate; a job total never goes below the minimum charge.
+          Ставки за слово по категориям анализа (как в Trados: скидка зашита в ставку категории).
+          Котировка = Σ слов × ставка; итог задания не опускается ниже минимальной суммы.
         </p>
         {cards.map((card) => (
           <div key={card.id} className="rate-card-block">
@@ -87,28 +87,28 @@ export default function RatesPage() {
               <span className="muted">{card.source_lang}→{card.target_lang}</span>
               <span className="status-chip st-translated">{card.currency}</span>
               <span className="muted small-text">
-                min charge:&nbsp;
+                мин. сумма:&nbsp;
                 <input
                   className="rate-input" defaultValue={card.min_charge}
                   onBlur={(e) => patchOnBlur(card, 'min_charge', e.target.value, card.min_charge)}
-                  title="Minimum job charge"
+                  title="Минимальная сумма задания"
                 />
               </span>
               <span className="spacer" />
               <button
                 className="btn small"
                 onClick={() => {
-                  if (window.confirm(`Delete rate card "${card.name}"?`)) {
-                    void act(() => api.deleteRateCard(card.id), `Deleted ${card.name}`);
+                  if (window.confirm(`Удалить прайс-лист «${card.name}»?`)) {
+                    void act(() => api.deleteRateCard(card.id), `Удалено ${card.name}`);
                   }
                 }}
               >
-                Delete
+                Удалить
               </button>
             </div>
             <div className="row wrap" style={{ marginTop: 6 }}>
               {RATE_CATEGORY_CODES.map((code) => (
-                <label key={code} className="rate-cell" title={`${RATE_CATEGORY_LABELS[code]} — rate per word`}>
+                <label key={code} className="rate-cell" title={`${RATE_CATEGORY_LABELS[code]} — ставка за слово`}>
                   <span className="muted small-text">{RATE_CATEGORY_LABELS[code]}</span>
                   <input
                     className="rate-input"

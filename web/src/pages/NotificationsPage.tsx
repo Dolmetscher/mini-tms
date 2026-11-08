@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { fmtDateTime } from '../api/labels';
 import type { AppNotification } from '../api/types';
 import { useUpdates } from '../ws/useUpdates';
 import { useAuth } from '../state/AuthContext';
 
 const TYPE_LABELS: Record<string, string> = {
-  job_assigned: 'New job assigned',
-  job_accepted: 'Job accepted',
-  job_declined: 'Job declined',
-  job_submitted: 'Job submitted',
-  job_returned: 'Job returned to rework',
-  job_reassigned: 'Job reassigned',
-  job_canceled: 'Job canceled',
-  deadline_reminder: 'Deadline reminder',
+  job_assigned: 'Назначено новое задание',
+  job_accepted: 'Задание принято',
+  job_declined: 'Задание отклонено',
+  job_submitted: 'Задание сдано',
+  job_returned: 'Задание возвращено на доработку',
+  job_reassigned: 'Задание переназначено',
+  job_canceled: 'Задание отменено',
+  deadline_reminder: 'Напоминание о дедлайне',
 };
 
 export default function NotificationsPage() {
@@ -46,7 +47,7 @@ export default function NotificationsPage() {
       setContactSaved(true);
       window.setTimeout(() => setContactSaved(false), 2500);
     } catch (err) {
-      setContactError(err instanceof Error ? err.message : 'Save failed');
+      setContactError(err instanceof Error ? err.message : 'Не удалось сохранить');
     }
   };
 
@@ -62,15 +63,15 @@ export default function NotificationsPage() {
   return (
     <>
       <section className="card row">
-        <h3 className="panel-title">Notification center</h3>
+        <h3 className="panel-title">Центр уведомлений</h3>
         <span className="spacer" />
         <button className="btn small" onClick={() => api.markAllNotificationsRead().then(load)}>
-          Mark all read
+          Прочитать все
         </button>
       </section>
 
       <section className="card">
-        {items.length === 0 && <div className="muted center">No notifications.</div>}
+        {items.length === 0 && <div className="muted center">Уведомлений нет.</div>}
         {items.map((n) => {
           const link = openJob(n);
           return (
@@ -82,37 +83,38 @@ export default function NotificationsPage() {
                   {typeof n.payload['reason'] === 'string' && ` — ${n.payload['reason']}`}
                   {typeof n.payload['comment'] === 'string' && ` — ${n.payload['comment']}`}
                   {n.type === 'deadline_reminder' && typeof n.payload['offset'] === 'string'
-                    && ` — deadline in ${n.payload['offset']}`}
+                    ? ` — дедлайн через ${n.payload['offset']}`
+                    : null}
                   {' · '}
-                  {new Date(n.created_at.endsWith('Z') || n.created_at.includes('+') ? n.created_at : n.created_at + 'Z').toLocaleString()}
+                  {fmtDateTime(n.created_at)}
                 </div>
               </div>
               <span className="spacer" />
               {!n.read_at && (
                 <button className="btn small" onClick={() => api.markNotificationRead(n.id).then(load)}>
-                  Mark read
+                  Прочитано
                 </button>
               )}
-              {link && <Link className="btn small" to={link}>Open job</Link>}
+              {link && <Link className="btn small" to={link}>Открыть задание</Link>}
             </div>
           );
         })}
       </section>
 
       <section className="card column" style={{ gap: 8 }}>
-        <h3 className="panel-title">External delivery channels (beta)</h3>
+        <h3 className="panel-title">Внешние каналы доставки (бета)</h3>
         <p className="muted small-text" style={{ margin: 0 }}>
-          Job events (assignment, submission, rework, deadline reminders) can also reach you by email
-          or Telegram if the administrator has enabled those channels. Telegram: message the bot first,
-          then paste your numeric chat id (from @userinfobot) or @username.
+          События по заданиям (назначение, сдача, доработка, напоминания о дедлайне) могут приходить
+          на email или в Telegram, если администратор включил эти каналы. Telegram: сначала напишите
+          боту, затем вставьте свой числовой chat id (из @userinfobot) или @username.
         </p>
         <div className="row wrap">
           <input placeholder="you@example.com" value={email} style={{ minWidth: 240 }}
                  onChange={(e) => setEmail(e.target.value)} />
           <input placeholder="Telegram chat id / @username" value={tgChat} style={{ minWidth: 200 }}
                  onChange={(e) => setTgChat(e.target.value)} />
-          <button className="btn small primary" onClick={() => void saveContacts()}>Save</button>
-          {contactSaved && <span className="done-note">✓ Saved</span>}
+          <button className="btn small primary" onClick={() => void saveContacts()}>Сохранить</button>
+          {contactSaved && <span className="done-note">✓ Сохранено</span>}
         </div>
         {contactError && <div className="alert">{contactError}</div>}
       </section>

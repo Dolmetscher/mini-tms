@@ -6,6 +6,7 @@ import {
 
 import { ApiError, api, tagTokens } from '../api';
 import type { Account, JobDetail, MTSuggestion, QAReport, Segment, TMSuggestion, TBHit, WsEvent } from '../api';
+import { MATCH_TYPE_LABELS, SEVERITY_LABELS, STATUS_LABELS, TR_STATUS_LABELS } from '../labels';
 import {
   clearDraft, dequeuePending, enqueuePending, loadDraft, listPending, saveDraft,
 } from '../store';
@@ -62,7 +63,7 @@ export default function EditorScreen({ account, jobId, wsEvent, onBack, onPendin
       setError('');
       await syncPendingCount();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load job');
+      setError(err instanceof Error ? err.message : 'Не удалось загрузить задание');
     }
   }, [account, jobId, syncPendingCount]);
 
@@ -192,9 +193,9 @@ export default function EditorScreen({ account, jobId, wsEvent, onBack, onPendin
     return (
       <View style={{ flex: 1 }}>
         <TouchableOpacity style={[common.button, { margin: 12 }]} onPress={onBack}>
-          <Text style={common.buttonText}>← Jobs</Text>
+          <Text style={common.buttonText}>← Задания</Text>
         </TouchableOpacity>
-        <Text style={[common.muted, { textAlign: 'center' }]}>{error || 'Loading…'}</Text>
+        <Text style={[common.muted, { textAlign: 'center' }]}>{error || 'Загрузка…'}</Text>
       </View>
     );
   }
@@ -258,7 +259,7 @@ export default function EditorScreen({ account, jobId, wsEvent, onBack, onPendin
       setMt(await api.mtSuggest(account, job.id, active.id));
     } catch (err) {
       // Отказ MT не блокирует редактор (FR-08)
-      setMt({ text: err instanceof Error ? err.message : 'MT unavailable', provider: 'unavailable' });
+      setMt({ text: err instanceof Error ? err.message : 'MT недоступен', provider: 'unavailable' });
     } finally {
       setMtBusy(false);
     }
@@ -268,7 +269,7 @@ export default function EditorScreen({ account, jobId, wsEvent, onBack, onPendin
     try {
       setQaReport(await api.jobQa(account, job.id));
     } catch (err) {
-      Alert.alert('QA failed', err instanceof Error ? err.message : 'Unknown error');
+      Alert.alert('Не удалось выполнить QA', err instanceof Error ? err.message : 'Неизвестная ошибка');
     }
   };
 
@@ -278,7 +279,7 @@ export default function EditorScreen({ account, jobId, wsEvent, onBack, onPendin
       setQaReport(null);
       onBack();
     } catch (err) {
-      Alert.alert('Submit failed', err instanceof Error ? err.message : 'Unknown error');
+      Alert.alert('Не удалось сдать задание', err instanceof Error ? err.message : 'Неизвестная ошибка');
       setQaReport(null);
     }
   };
@@ -304,8 +305,8 @@ export default function EditorScreen({ account, jobId, wsEvent, onBack, onPendin
 
   const sc = active ? statusColors[active.confirmed ? 'confirmed' : active.translation_status] : statusColors.new;
   const saveLabels: Record<SaveState, string> = {
-    saved: '✓ Saved', dirty: 'Editing…', saving: 'Saving…',
-    offline: '⚠ No connection — draft saved locally', error: '⚠ Save error',
+    saved: '✓ Сохранено', dirty: 'Правка…', saving: 'Сохранение…',
+    offline: '⚠ Нет связи — черновик сохранен локально', error: '⚠ Ошибка сохранения',
   };
 
   return (
@@ -320,21 +321,21 @@ export default function EditorScreen({ account, jobId, wsEvent, onBack, onPendin
         </View>
         <View style={[common.chip, { backgroundColor: (statusColors[job.status] ?? statusColors.new).bg }]}>
           <Text style={[common.chipText, { color: (statusColors[job.status] ?? statusColors.new).fg }]}>
-            {job.status.replace('_', ' ')}
+            {STATUS_LABELS[job.status] ?? job.status}
           </Text>
         </View>
       </View>
 
-      {job.rework_comment ? <Text style={styles.rework}>Returned to rework: {job.rework_comment}</Text> : null}
+      {job.rework_comment ? <Text style={styles.rework}>Возвращено на доработку: {job.rework_comment}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <View style={[common.row, common.wrap, { paddingHorizontal: 12, marginBottom: 6 }]}>
-        <TextInput style={[common.input, { flex: 1, minWidth: 140 }]} placeholder="Search segments…" value={search} onChangeText={setSearch} />
+        <TextInput style={[common.input, { flex: 1, minWidth: 140 }]} placeholder="Поиск по сегментам…" value={search} onChangeText={setSearch} />
         {(['all', 'untranslated', 'unconfirmed'] as Filter[]).map((f) => (
           <TouchableOpacity key={f} style={[styles.filterChip, filter === f && styles.filterChipActive]}
                             onPress={() => setFilter(f)}>
             <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>
-              {f === 'all' ? 'All' : f === 'untranslated' ? 'Untransl.' : 'Unconf.'}
+              {f === 'all' ? 'Все' : f === 'untranslated' ? 'Не перев.' : 'Не подтв.'}
             </Text>
           </TouchableOpacity>
         ))}
@@ -356,21 +357,21 @@ export default function EditorScreen({ account, jobId, wsEvent, onBack, onPendin
               <View style={[common.row, { marginBottom: 4 }]}>
                 <Text style={styles.segNum}>{item.position + 1}</Text>
                 <View style={common.spacer} />
-                {item.is_mandatory && <View style={[common.chip, { backgroundColor: colors.grayBg }]}><Text style={common.chipText}>mand.</Text></View>}
+                {item.is_mandatory && <View style={[common.chip, { backgroundColor: colors.grayBg }]}><Text style={common.chipText}>обяз.</Text></View>}
                 <View style={[common.chip, { backgroundColor: badge.bg }]}>
                   <Text style={[common.chipText, { color: badge.fg }]}>
-                    {item.confirmed ? 'confirmed' : item.translation_status}
+                    {item.confirmed ? 'подтверждено' : (TR_STATUS_LABELS[item.translation_status] ?? item.translation_status)}
                   </Text>
                 </View>
               </View>
               <Text style={styles.source}>{item.source_text}</Text>
               <Text style={[styles.target, !item.target_text && styles.targetEmpty]}>
-                {item.target_text || 'Tap to translate…'}
+                {item.target_text || 'Нажмите, чтобы перевести…'}
               </Text>
             </TouchableOpacity>
           );
         }}
-        ListEmptyComponent={<Text style={styles.empty}>No segments match the filter.</Text>}
+        ListEmptyComponent={<Text style={styles.empty}>Нет сегментов по фильтру.</Text>}
       />
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -383,10 +384,10 @@ export default function EditorScreen({ account, jobId, wsEvent, onBack, onPendin
             {active && canEdit && (
               <>
                 <TouchableOpacity style={[common.button, !undoRef.current.length && common.disabled]} onPress={undo}>
-                  <Text style={common.buttonText}>Undo</Text>
+                  <Text style={common.buttonText}>Отменить</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[common.button, !redoRef.current.length && common.disabled]} onPress={redo}>
-                  <Text style={common.buttonText}>Redo</Text>
+                  <Text style={common.buttonText}>Вернуть</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={common.button} onPress={() => goto(-1)}>
                   <Text style={common.buttonText}>←</Text>
@@ -400,7 +401,7 @@ export default function EditorScreen({ account, jobId, wsEvent, onBack, onPendin
 
           {active ? (
             <>
-              <Text style={common.small}>Segment {active.position + 1} / {job.segments.length} · {active.source_words} words</Text>
+              <Text style={common.small}>Сегмент {active.position + 1} / {job.segments.length} · {active.source_words} слов</Text>
               <Text style={[common.small, { color: colors.text }]} numberOfLines={3}>{active.source_text}</Text>
 
               {suggestions.length > 0 && (
@@ -411,7 +412,7 @@ export default function EditorScreen({ account, jobId, wsEvent, onBack, onPendin
                       <Text style={styles.tmScore}>{s.match_percentage}%</Text>
                       <Text style={{ flex: 1 }} numberOfLines={2}>
                         {s.target_suggestion}{' '}
-                        <Text style={common.small}>· {s.tm_name} · {s.match_type}</Text>
+                        <Text style={common.small}>· {s.tm_name} · {MATCH_TYPE_LABELS[s.match_type] ?? s.match_type}</Text>
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -450,34 +451,34 @@ export default function EditorScreen({ account, jobId, wsEvent, onBack, onPendin
                     multiline
                     value={draft}
                     onChangeText={onChangeDraft}
-                    placeholder="Type translation here…"
+                    placeholder="Введите перевод…"
                     textAlignVertical="top"
                   />
                   <View style={[common.row, { marginTop: 8 }]}>
                     <TouchableOpacity style={[common.button, common.primaryButton]} onPress={() => void confirmAndNext()}>
-                      <Text style={[common.buttonText, common.primaryButtonText]}>Confirm & Next</Text>
+                      <Text style={[common.buttonText, common.primaryButtonText]}>Подтвердить и далее</Text>
                     </TouchableOpacity>
                     <View style={common.spacer} />
                     <TouchableOpacity style={common.button} onPress={() => void runMt()} disabled={mtBusy}>
-                      <Text style={common.buttonText}>{mtBusy ? 'MT…' : 'Get MT'}</Text>
+                      <Text style={common.buttonText}>{mtBusy ? 'MT…' : 'Запросить MT'}</Text>
                     </TouchableOpacity>
                   </View>
                   {mt && (
                     <TouchableOpacity style={styles.mtBox} onPress={() => onChangeDraft(mt.text)}>
-                      <Text style={common.small}>Machine translation ({mt.provider}) — tap to insert, then post-edit:</Text>
+                      <Text style={common.small}>Машинный перевод ({mt.provider}) — нажмите, чтобы вставить, затем вычитайте:</Text>
                       <Text>{mt.text}</Text>
                     </TouchableOpacity>
                   )}
                 </>
               ) : (
-                <Text style={[common.muted, { marginTop: 8 }]}>Read-only in status “{job.status}”.</Text>
+                <Text style={[common.muted, { marginTop: 8 }]}>Только для чтения в статусе «{STATUS_LABELS[job.status] ?? job.status}».</Text>
               )}
             </>
           ) : (
             <Text style={[common.muted, styles.placeholder]}>
               {job.total_segments > 0 && job.confirmed_segments === job.total_segments
-                ? '✓ All mandatory segments confirmed. Run QA and submit.'
-                : 'Select a segment above to translate.'}
+                ? '✓ Все обязательные сегменты подтверждены. Прогоните QA и сдавайте.'
+                : 'Выберите сегмент выше, чтобы перевести.'}
             </Text>
           )}
         </View>
@@ -488,13 +489,13 @@ export default function EditorScreen({ account, jobId, wsEvent, onBack, onPendin
              onRequestClose={() => setQaReport(null)}>
         <View style={styles.modalBackdrop}>
           <View style={[common.card, styles.modalCard]}>
-            <Text style={{ fontSize: 16, fontWeight: 'bold' }}>Quality check</Text>
+            <Text style={{ fontSize: 16, fontWeight: 'bold' }}>Проверка качества</Text>
             {qaReport && (
               <>
                 <Text style={[styles.qaSummary, { color: qaReport.can_submit ? colors.green : colors.red }]}>
                   {qaReport.can_submit
-                    ? 'No blocking errors. Ready to submit.'
-                    : `${qaReport.blocking_count} blocking, ${qaReport.warning_count} warning(s).`}
+                    ? 'Блокирующих ошибок нет. Можно сдавать.'
+                    : `Блокирующих: ${qaReport.blocking_count}, предупреждений: ${qaReport.warning_count}.`}
                 </Text>
                 <FlatList
                   data={qaReport.items}
@@ -510,24 +511,24 @@ export default function EditorScreen({ account, jobId, wsEvent, onBack, onPendin
                                           setQaReport(null);
                                         }}>
                         <View style={[common.chip, { backgroundColor: badge.bg }]}>
-                          <Text style={[common.chipText, { color: badge.fg }]}>{item.severity}</Text>
+                          <Text style={[common.chipText, { color: badge.fg }]}>{SEVERITY_LABELS[item.severity] ?? item.severity}</Text>
                         </View>
                         <Text style={{ flex: 1, fontSize: 13 }}>#{item.position + 1} {item.message}</Text>
                       </TouchableOpacity>
                     );
                   }}
-                  ListEmptyComponent={<Text style={common.muted}>No issues found.</Text>}
+                  ListEmptyComponent={<Text style={common.muted}>Замечаний нет.</Text>}
                 />
                 <View style={[common.row, { marginTop: 10 }]}>
                   <TouchableOpacity style={common.button} onPress={() => setQaReport(null)}>
-                    <Text style={common.buttonText}>Close</Text>
+                    <Text style={common.buttonText}>Закрыть</Text>
                   </TouchableOpacity>
                   <View style={common.spacer} />
                   <TouchableOpacity
                     style={[common.button, common.primaryButton, !qaReport.can_submit && common.disabled]}
                     disabled={!qaReport.can_submit} onPress={() => void doSubmit()}
                   >
-                    <Text style={[common.buttonText, common.primaryButtonText]}>Submit job</Text>
+                    <Text style={[common.buttonText, common.primaryButtonText]}>Сдать задание</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -540,21 +541,21 @@ export default function EditorScreen({ account, jobId, wsEvent, onBack, onPendin
       <Modal visible={conflict !== null} transparent animationType="fade" onRequestClose={() => setConflict(null)}>
         <View style={styles.modalBackdrop}>
           <View style={[common.card, styles.modalCard]}>
-            <Text style={{ fontSize: 16, fontWeight: 'bold' }}>Version conflict</Text>
+            <Text style={{ fontSize: 16, fontWeight: 'bold' }}>Конфликт версий</Text>
             <Text style={[common.small, { marginVertical: 6 }]}>
-              The segment was changed on the server. Choose which version to keep.
+              Сегмент изменен на сервере. Выберите, какую версию оставить.
             </Text>
-            <Text style={styles.conflictTitle}>Server version</Text>
+            <Text style={styles.conflictTitle}>Версия сервера</Text>
             <Text style={styles.conflictText}>{conflict?.target_text || '—'}</Text>
-            <Text style={styles.conflictTitle}>Your draft</Text>
+            <Text style={styles.conflictTitle}>Ваш черновик</Text>
             <Text style={styles.conflictText}>{draft || '—'}</Text>
             <View style={[common.row, { marginTop: 10 }]}>
               <TouchableOpacity style={common.button} onPress={keepServer}>
-                <Text style={common.buttonText}>Keep server</Text>
+                <Text style={common.buttonText}>Оставить серверную</Text>
               </TouchableOpacity>
               <View style={common.spacer} />
               <TouchableOpacity style={[common.button, common.primaryButton]} onPress={overwriteMine}>
-                <Text style={[common.buttonText, common.primaryButtonText]}>Overwrite with mine</Text>
+                <Text style={[common.buttonText, common.primaryButtonText]}>Перезаписать моей</Text>
               </TouchableOpacity>
             </View>
           </View>

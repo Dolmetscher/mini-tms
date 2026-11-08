@@ -98,7 +98,7 @@ def get_document(document_id: int, ctx: Context = Depends(get_context)):
     ctx.require_role("admin", "pm")
     document = ctx.db.get(models.Document, document_id)
     if document is None or document.org_id != ctx.org_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Document not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Документ не найден")
     return document
 
 
@@ -120,7 +120,7 @@ def _process_document(document_id: int) -> None:
             return
         if not segments:
             document.processing_status = "failed"
-            document.processing_error = "Document contains no text"
+            document.processing_error = "Документ не содержит текста"
             db.commit()
             return
         # Существующие переводы (XLIFF state/approved) — черновиками, как
@@ -165,7 +165,7 @@ async def upload_document(
     project = project_or_404(ctx, project_id)
     fmt = segmentation.detect_format(file.filename or "")
     if fmt is None:
-        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Supported formats: TXT, DOCX, XLIFF")
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Поддерживаемые форматы: TXT, DOCX, XLIFF")
 
     content = await file.read()
     os.makedirs(config.DATA_DIR, exist_ok=True)
@@ -209,27 +209,27 @@ def connect_resource(project_id: int, body: schemas.ResourceCreate, ctx: Context
     ctx.require_role("admin", "pm")
     project = project_or_404(ctx, project_id)
     if bool(body.tm_id) == bool(body.tb_id):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Provide exactly one of tm_id, tb_id")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Укажите ровно одно: tm_id или tb_id")
 
     if body.tm_id is not None:
         tm = ctx.db.get(models.TM, body.tm_id)
         if tm is None or tm.org_id != ctx.org_id:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="TM not found")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Память переводов (TM) не найдена")
         # Проверка совместимости языков (FR-12).
         if tm.source_lang != project.source_lang or tm.target_lang not in project.target_langs:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"TM language pair {tm.source_lang}->{tm.target_lang} does not match the project",
+                detail=f"Языковая пара TM {tm.source_lang}->{tm.target_lang} не совпадает с проектом",
             )
         audit.audit(ctx.db, ctx.org_id, ctx.user_id, "resource.connect_tm", "project", project.id, {"tm_id": tm.id})
     else:
         tb = ctx.db.get(models.TB, body.tb_id)
         if tb is None or tb.org_id != ctx.org_id:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="TB not found")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Термбаза (TB) не найдена")
         if tb.source_lang != project.source_lang or tb.target_lang not in project.target_langs:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"TB language pair {tb.source_lang}->{tb.target_lang} does not match the project",
+                detail=f"Языковая пара TB {tb.source_lang}->{tb.target_lang} не совпадает с проектом",
             )
         audit.audit(ctx.db, ctx.org_id, ctx.user_id, "resource.connect_tb", "project", project.id, {"tb_id": tb.id})
 
@@ -272,7 +272,7 @@ def disconnect_resource(project_id: int, resource_id: int, ctx: Context = Depend
     project_or_404(ctx, project_id)
     resource = ctx.db.get(models.ProjectResource, resource_id)
     if resource is None or resource.project_id != project_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Resource not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Ресурс не найден")
     ctx.db.delete(resource)
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "resource.disconnect", "project", project_id, {"resource_id": resource_id})
     ctx.db.commit()
@@ -297,7 +297,7 @@ def concordance(
     project = project_or_404(ctx, project_id)
     ensure_project_access(ctx, project)
     if target_lang not in project.target_langs:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unknown target language")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Неизвестный целевой язык")
 
     wanted = normalize(text)
     results: list[schemas.TMSuggestionOut] = []
@@ -407,7 +407,7 @@ def deliver_project(project_id: int, ctx: Context = Depends(get_context)):
     if not jobs:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail="No submitted jobs to deliver yet",
+            detail="Нет сданных заданий для отгрузки",
         )
     payload = delivery.build_delivery_zip(jobs)
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "project.deliver", "project", project.id, {

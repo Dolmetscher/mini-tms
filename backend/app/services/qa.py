@@ -52,7 +52,7 @@ def _check_numbers(segment: models.Segment) -> str | None:
     if not segment.target_text.strip():
         return None
     if _numbers(segment.source_text) != _numbers(segment.target_text):
-        return "Numbers in the translation differ from the source"
+        return "Числа в переводе не совпадают с исходником"
     return None
 
 
@@ -62,12 +62,12 @@ def _check_whitespace(segment: models.Segment) -> list[str]:
     if not target.strip():
         return issues
     if _DOUBLE_SPACE_RE.search(target):
-        issues.append("Double space in the translation")
+        issues.append("Двойной пробел в переводе")
     # Согласованность ведущих/замыкающих пробелов с исходником.
     if target != target.lstrip() and source == source.lstrip():
-        issues.append("Translation starts with a space while the source does not")
+        issues.append("Перевод начинается с пробела, исходник — нет")
     if target != target.rstrip() and source == source.rstrip():
-        issues.append("Translation ends with a space while the source does not")
+        issues.append("Перевод заканчивается пробелом, исходник — нет")
     return issues
 
 
@@ -76,7 +76,7 @@ def _check_repeated_word(segment: models.Segment) -> list[str]:
     if not target.strip():
         return []
     plain = tags.strip_tags(target)
-    return [f'Repeated word "{match.group(1)}" in the translation'
+    return [f'Повтор слова «{match.group(1)}» в переводе'
             for match in _REPEATED_WORD_RE.finditer(plain)]
 
 
@@ -89,14 +89,14 @@ def _check_brackets(segment: models.Segment) -> list[str]:
         target_opens, target_closes = target.count(opening), target.count(closing)
         if target_opens != target_closes:
             issues.append(
-                f'Unbalanced bracket "{closing}" in the translation '
-                f"({target_opens} opening vs {target_closes} closing)"
+                f'Непарная скобка «{closing}» в переводе '
+                f"({target_opens} открывающих против {target_closes} закрывающих)"
             )
             continue
         source_opens = source.count(opening)
         if source_opens and source_opens != target_opens:
             issues.append(
-                f'Bracket "{opening}{closing}" count differs from the source '
+                f'Число скобок «{opening}{closing}» отличается от исходника '
                 f"({source_opens} -> {target_opens})"
             )
     return issues
@@ -109,7 +109,7 @@ def _check_final_punctuation(segment: models.Segment) -> str | None:
     src_last = source.rstrip()[-1:] if source.strip() else ""
     tgt_last = target.rstrip()[-1:] if target.strip() else ""
     if src_last and src_last in _TERMINALS and tgt_last and tgt_last not in _TRAILING_OK:
-        return f'Translation ends with "{tgt_last}" while the source ends with "{src_last}"'
+        return f'Перевод заканчивается на «{tgt_last}», исходник — на «{src_last}»'
     return None
 
 
@@ -126,7 +126,7 @@ def _check_identical(segment: models.Segment, source_lang: str, target_lang: str
     if _URLISH_RE.match(source):
         return None  # URL/email обычно не переводятся
     if source.casefold() == target.casefold():
-        return "Translation is identical to the source"
+        return "Перевод идентичен исходнику"
     return None
 
 
@@ -149,10 +149,10 @@ def _check_placeholders(segment: models.Segment) -> str | None:
     extra = sorted((tgt - src).elements())
     parts = []
     if missing:
-        parts.append(f"missing {' '.join(missing)}")
+        parts.append(f"нет: {' '.join(missing)}")
     if extra:
-        parts.append(f"unexpected {' '.join(extra)}")
-    return f"Placeholder mismatch: {', '.join(parts)}"
+        parts.append(f"лишние: {' '.join(extra)}")
+    return f"Плейсхолдеры не совпадают: {', '.join(parts)}"
 
 
 def _check_length_ratio(
@@ -172,8 +172,8 @@ def _check_length_ratio(
     ratio = len(target) / len(source)
     if ratio > 2.0 or ratio < 0.5:
         return (
-            f"Translation length is {int(round(ratio * 100))}% of the source "
-            "(typical 80–120%) — check for missing or extra content"
+            f"Длина перевода {int(round(ratio * 100))}% от исходника "
+            "(норма 80–120%) — проверьте пропуски и лишний текст"
         )
     return None
 
@@ -228,8 +228,8 @@ def _check_terms(
             if entry.status == "forbidden":
                 if entry.translation.casefold() in target_lower:
                     issues.append((
-                        f'Forbidden term variant "{entry.translation}" '
-                        f'(term "{entry.term}", TB "{tb_name}")',
+                        f'Запрещенный вариант «{entry.translation}» '
+                        f'(термин «{entry.term}», TB «{tb_name}»)',
                         "warning",
                     ))
                 continue
@@ -238,8 +238,8 @@ def _check_terms(
                 allowed = allowed_by_term.get(entry.term, [])
                 if not any(a.translation.casefold() in target_lower for a in allowed):
                     issues.append((
-                        f'Term "{entry.term}" (TB "{tb_name}") is not translated '
-                        f'with an approved variant ("{entry.translation}")',
+                        f'Термин «{entry.term}» (TB «{tb_name}») не переведен '
+                        f'утвержденным вариантом («{entry.translation}»)',
                         "warning",
                     ))
     return issues
@@ -284,10 +284,10 @@ def _check_regex_rules(
         if matched:
             fragment = matched.group(0)[:60]
             message = (
-                f'Rule "{rule.name}": forbidden pattern found in the {rule.side}: "{fragment}"'
+                f'Правило «{rule.name}»: запрещенный паттерн найден в {rule.side}: «{fragment}»'
             )
         else:
-            message = f'Rule "{rule.name}": required pattern not found in the {rule.side}'
+            message = f'Правило «{rule.name}»: обязательный паттерн не найден в {rule.side}'
         issues.append((message, rule.severity))
     return issues
 
@@ -305,7 +305,7 @@ def run_qa(db: Session, job: models.Job) -> dict:
                 "position": segment.position,
                 "code": "missing_translation",
                 "severity": "error",
-                "message": "Mandatory segment has no translation",
+                "message": "Обязательный сегмент без перевода",
             })
             continue
         if not segment.confirmed:
@@ -314,7 +314,7 @@ def run_qa(db: Session, job: models.Job) -> dict:
                 "position": segment.position,
                 "code": "unconfirmed",
                 "severity": "error",
-                "message": "Mandatory segment is not confirmed",
+                "message": "Обязательный сегмент не подтвержден",
             })
         for error in tags.validate_tags(segment.source_text, segment.target_text):
             items.append({

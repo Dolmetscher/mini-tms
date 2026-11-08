@@ -102,16 +102,16 @@ def _editable_segment(ctx: Context, segment_id: int) -> models.Segment:
     """Общие проверки прав/статуса для сохранения и захвата лока."""
     segment = ctx.db.get(models.Segment, segment_id)
     if segment is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Сегмент не найден")
     job = segment.job
     if job.org_id != ctx.org_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Сегмент не найден")
     if not can_manage(ctx) and job.assignee_id != ctx.user_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Job is not assigned to you")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Задание не назначено вам")
     if job.status not in EDITABLE_STATUSES:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail=f"Job status '{job.status}' does not allow editing",
+            detail=f"Статус задания «{job.status}» не допускает правку",
         )
     return segment
 
@@ -166,12 +166,12 @@ async def unlock_segment(segment_id: int, ctx: Context = Depends(get_context)):
     """Снять свой лок; менеджмент может снять чужой (ушедший в отпуск переводчик)."""
     segment = ctx.db.get(models.Segment, segment_id)
     if segment is None or segment.job.org_id != ctx.org_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Сегмент не найден")
     ensure_job_access(ctx, segment.job)
     if not can_manage(ctx):
         released = locks.release(ctx.db, segment.id, user_id=ctx.user_id)
         if released is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Lock not found")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Лок не найден")
     else:
         locks.release(ctx.db, segment.id)
     ctx.db.commit()
@@ -226,7 +226,7 @@ async def save_segment(segment_id: int, body: schemas.SegmentUpdate, ctx: Contex
         segment.translation_status = "translated" if body.target_text.strip() else "drafted"
     if body.confirmed is not None:
         if body.confirmed and not segment.target_text.strip():
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Cannot confirm an empty segment")
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Нельзя подтвердить пустой сегмент")
         segment.confirmed = body.confirmed
     segment.updated_by = ctx.user_id
 
@@ -281,14 +281,14 @@ def assign_job(job_id: int, body: schemas.AssignRequest, ctx: Context = Depends(
     ctx.require_role("admin", "pm")
     job = job_or_404(ctx, job_id)
     if job.status not in ("unassigned", "assigned", "declined"):
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Cannot assign a job in status '{job.status}'")
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Нельзя назначить задание в статусе «{job.status}»")
     membership = (
         ctx.db.query(models.Membership)
         .filter(models.Membership.org_id == ctx.org_id, models.Membership.user_id == body.assignee_id)
         .first()
     )
     if membership is None or membership.role != "translator":
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Assignee must be a translator of this organization")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Исполнитель должен быть переводчиком этой организации")
 
     previous = job.assignee_id
     job.assignee_id = body.assignee_id
@@ -313,9 +313,9 @@ def assign_job(job_id: int, body: schemas.AssignRequest, ctx: Context = Depends(
 def accept_job(job_id: int, ctx: Context = Depends(get_context)):
     job = job_or_404(ctx, job_id)
     if job.assignee_id != ctx.user_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Job is not assigned to you")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Задание не назначено вам")
     if job.status != "assigned":
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Cannot accept a job in status '{job.status}'")
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Нельзя принять задание в статусе «{job.status}»")
     job.status = "accepted"
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "job.accept", "job", job.id, {})
     notify.notify(ctx.db, ctx.org_id, job.project.manager_id, "job_accepted", {"job_id": job.id})
@@ -327,9 +327,9 @@ def accept_job(job_id: int, ctx: Context = Depends(get_context)):
 def decline_job(job_id: int, body: schemas.DeclineRequest, ctx: Context = Depends(get_context)):
     job = job_or_404(ctx, job_id)
     if job.assignee_id != ctx.user_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Job is not assigned to you")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Задание не назначено вам")
     if job.status != "assigned":
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Cannot decline a job in status '{job.status}'")
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Нельзя отклонить задание в статусе «{job.status}»")
     job.status = "declined"
     job.decline_reason = body.reason
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "job.decline", "job", job.id, {"reason": body.reason})
@@ -353,7 +353,7 @@ def get_qa(job_id: int, ctx: Context = Depends(get_context)):
 def _segment_of_job(db: Session, job: models.Job, segment_id: int) -> models.Segment:
     segment = db.get(models.Segment, segment_id)
     if segment is None or segment.job_id != job.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found in this job")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Сегмент не найден в этом задании")
     return segment
 
 
@@ -409,7 +409,7 @@ async def delete_lqa_error(job_id: int, error_id: int, ctx: Context = Depends(ge
         .first()
     )
     if error is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="LQA error not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Ошибка LQA не найдена")
     ctx.db.delete(error)
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "job.lqa_error_delete", "job", job.id, {
         "segment_id": error.segment_id, "category": error.category,
@@ -438,7 +438,7 @@ def segment_history(segment_id: int, ctx: Context = Depends(get_context)):
     """
     segment = ctx.db.get(models.Segment, segment_id)
     if segment is None or segment.job.org_id != ctx.org_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Сегмент не найден")
     ensure_job_access(ctx, segment.job)
     revisions = (
         ctx.db.query(models.SegmentRevision)
@@ -486,7 +486,7 @@ def _segment_notes(db: Session, segment: models.Segment) -> list[schemas.Segment
 def list_notes(segment_id: int, ctx: Context = Depends(get_context)):
     segment = ctx.db.get(models.Segment, segment_id)
     if segment is None or segment.job.org_id != ctx.org_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Сегмент не найден")
     ensure_job_access(ctx, segment.job)
     return _segment_notes(ctx.db, segment)
 
@@ -500,10 +500,10 @@ async def add_note(segment_id: int, body: schemas.SegmentNoteCreate, ctx: Contex
     """
     segment = ctx.db.get(models.Segment, segment_id)
     if segment is None or segment.job.org_id != ctx.org_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Сегмент не найден")
     job = segment.job
     if not can_manage(ctx) and job.assignee_id != ctx.user_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Job is not assigned to you")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Задание не назначено вам")
     note = models.SegmentNote(
         segment_id=segment.id,
         author_id=ctx.user_id,
@@ -544,11 +544,11 @@ async def pre_translate_job(
     """
     job = job_or_404(ctx, job_id)
     if not can_manage(ctx) and job.assignee_id != ctx.user_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Job is not assigned to you")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Задание не назначено вам")
     if job.status not in EDITABLE_STATUSES:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail=f"Job status '{job.status}' does not allow editing",
+            detail=f"Статус задания «{job.status}» не допускает правку",
         )
     result = leveraging.pre_translate(ctx.db, job, ctx.user_id, body.min_score)
     audit.audit(
@@ -568,9 +568,9 @@ def submit_job(job_id: int, ctx: Context = Depends(get_context)):
     """Сдача задания: только после прохождения QA (FR-09)."""
     job = job_or_404(ctx, job_id)
     if job.assignee_id != ctx.user_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Job is not assigned to you")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Задание не назначено вам")
     if job.status not in EDITABLE_STATUSES:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Cannot submit a job in status '{job.status}'")
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Нельзя сдать задание в статусе «{job.status}»")
     report = qa.run_qa(ctx.db, job)
     if not report["can_submit"]:
         return Response(
@@ -591,7 +591,7 @@ def complete_job(job_id: int, ctx: Context = Depends(get_context)):
     ctx.require_role("admin", "pm")
     job = job_or_404(ctx, job_id)
     if job.status != "submitted":
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Cannot complete a job in status '{job.status}'")
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Нельзя завершить задание в статусе «{job.status}»")
     job.status = "completed"
     locks.release_job_locks(ctx.db, job)
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "job.complete", "job", job.id, {})
@@ -604,7 +604,7 @@ def return_job(job_id: int, body: schemas.ReturnRequest, ctx: Context = Depends(
     ctx.require_role("admin", "pm")
     job = job_or_404(ctx, job_id)
     if job.status != "submitted":
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Cannot return a job in status '{job.status}'")
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Нельзя вернуть задание в статусе «{job.status}»")
     job.status = "rework"
     job.rework_comment = body.comment
     locks.release_job_locks(ctx.db, job)  # локи ревью не должны мешать переводчику переделывать
@@ -626,7 +626,7 @@ def cancel_job(job_id: int, ctx: Context = Depends(get_context)):
     ctx.require_role("admin", "pm")
     job = job_or_404(ctx, job_id)
     if job.status in ("completed", "canceled"):
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Cannot cancel a job in status '{job.status}'")
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Нельзя отменить задание в статусе «{job.status}»")
     previous_assignee = job.assignee_id
     job.status = "canceled"
     locks.release_job_locks(ctx.db, job)
@@ -642,9 +642,9 @@ def export_job(job_id: int, ctx: Context = Depends(get_context)):
     ctx.require_role("admin", "pm")
     job = job_or_404(ctx, job_id)
     if job.status not in ("submitted", "completed"):
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="Export is available after submission")
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Экспорт доступен после сдачи")
     if job.document.processing_status != "ready":
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="Document is not processed yet")
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Документ еще не обработан")
     exported, fmt = delivery.export_target_bytes(job)
     base, _ = os.path.splitext(job.document.name)
     filename = f"{base}_{job.target_lang}.{fmt}"
@@ -702,11 +702,11 @@ async def pseudo_translate_job(
     """
     job = job_or_404(ctx, job_id)
     if not can_manage(ctx) and job.assignee_id != ctx.user_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Job is not assigned to you")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Задание не назначено вам")
     if job.status not in EDITABLE_STATUSES:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail=f"Job status '{job.status}' does not allow editing",
+            detail=f"Статус задания «{job.status}» не допускает правку",
         )
     result = pseudo.pseudo_translate(ctx.db, job, ctx.user_id, body.overwrite)
     audit.audit(
@@ -754,11 +754,11 @@ async def import_xliff_handoff(
     """
     job = job_or_404(ctx, job_id)
     if not can_manage(ctx) and job.assignee_id != ctx.user_id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Job is not assigned to you")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Задание не назначено вам")
     if job.status not in EDITABLE_STATUSES:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail=f"Job status '{job.status}' does not allow editing",
+            detail=f"Статус задания «{job.status}» не допускает правку",
         )
     content = await file.read()
     try:
@@ -795,15 +795,15 @@ async def mt_suggest(job_id: int, segment_id: int, ctx: Context = Depends(get_co
     job = job_or_404(ctx, job_id)
     ensure_job_access(ctx, job)
     if not ctx.org.mt_allowed:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="MT is not allowed for this organization")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Автоперевод (MT) отключен для организации")
     if not job.project.mt_enabled:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="MT is disabled for this project")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Автоперевод (MT) отключен для проекта")
     segment = ctx.db.get(models.Segment, segment_id)
     if segment is None or segment.job_id != job.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Сегмент не найден")
     provider = get_provider()
     if provider.name == "none":
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="MT provider is not configured")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="Провайдер MT не настроен")
     try:
         text = await provider.translate(segment.source_text, job.project.source_lang, job.target_lang)
     except MTError as exc:

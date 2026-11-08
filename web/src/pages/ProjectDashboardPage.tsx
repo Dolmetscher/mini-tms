@@ -1,13 +1,9 @@
 import { ChangeEvent, useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, downloadJobExport, downloadJobQuoteExport, downloadProjectDelivery, downloadProjectInvoice, getActiveOrg } from '../api/client';
+import { PROC_STATUS_LABELS, STATUS_LABELS, fmtDateTime } from '../api/labels';
 import type { DocumentInfo, Job, Member, Project, ProjectQuote, RateCard, Resource, TMInfo, TBInfo } from '../api/types';
 import { useUpdates } from '../ws/useUpdates';
-
-function fmtDeadline(value: string | null): string {
-  if (!value) return '—';
-  return new Date(value.endsWith('Z') || value.includes('+') ? value : value + 'Z').toLocaleString();
-}
 
 export default function ProjectDashboardPage() {
   const { id } = useParams();
@@ -45,7 +41,7 @@ export default function ProjectDashboardPage() {
       setMembers(m); setTms(tmsList); setTbs(tbsList);
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Load failed');
+      setError(err instanceof Error ? err.message : 'Не удалось загрузить');
     }
   }, [projectId]);
 
@@ -62,7 +58,7 @@ export default function ProjectDashboardPage() {
       setQuote(await api.projectQuote(projectId, quoteCard ? Number(quoteCard) : undefined));
     } catch (err) {
       setQuote(null);
-      setError(err instanceof Error ? err.message : 'Quote failed');
+      setError(err instanceof Error ? err.message : 'Не удалось рассчитать котировку');
     }
   };
 
@@ -84,7 +80,7 @@ export default function ProjectDashboardPage() {
       await fn();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Action failed');
+      setError(err instanceof Error ? err.message : 'Действие не удалось');
     }
   };
 
@@ -98,7 +94,7 @@ export default function ProjectDashboardPage() {
   const translators = members.filter((m) => m.role === 'translator');
   const deliverableCount = jobs.filter((j) => ['submitted', 'completed'].includes(j.status)).length;
 
-  if (!project) return <div className="muted center">{error || 'Loading…'}</div>;
+  if (!project) return <div className="muted center">{error || 'Загрузка…'}</div>;
 
   return (
     <>
@@ -106,21 +102,21 @@ export default function ProjectDashboardPage() {
         <div className="row wrap">
           <h3 className="panel-title">{project.name}</h3>
           <span className="muted">{project.source_lang} → {project.target_langs.join(', ')}</span>
-          <span className="muted small-text">Deadline: {fmtDeadline(project.deadline)}</span>
+          <span className="muted small-text">Дедлайн: {fmtDateTime(project.deadline)}</span>
           <span className={`status-chip ${project.mt_enabled ? 'st-in_progress' : 'st-new'}`}>
-            MT {project.mt_enabled ? 'on' : 'off'}
+            MT {project.mt_enabled ? 'вкл' : 'выкл'}
           </span>
         </div>
-        {project.instructions && <div className="muted small-text">Instructions: {project.instructions}</div>}
+        {project.instructions && <div className="muted small-text">Инструкции: {project.instructions}</div>}
         <div className="row wrap" style={{ marginTop: 10 }}>
           <label className="btn small" style={{ cursor: 'pointer' }}>
-            Upload document (TXT / DOCX / XLIFF)
+            Загрузить документ (TXT / DOCX / XLIFF)
             <input type="file" accept=".txt,.text,.docx,.xliff,.xlf" hidden onChange={upload} />
           </label>
           {documents.map((d) => (
             <span key={d.id} className={`status-chip st-${d.processing_status === 'ready' ? 'translated' : d.processing_status === 'failed' ? 'new' : 'drafted'}`}
                   title={d.processing_error ?? ''}>
-              {d.name}: {d.processing_status}
+              {d.name}: {PROC_STATUS_LABELS[d.processing_status] ?? d.processing_status}
             </span>
           ))}
         </div>
@@ -129,27 +125,27 @@ export default function ProjectDashboardPage() {
       {error && <div className="alert">{error}</div>}
 
       <section className="card">
-        <h3 className="panel-title">Quote</h3>
+        <h3 className="panel-title">Котировка</h3>
         <p className="muted small-text">
-          Cost of this project from the volume analysis × per-word rates. One rate card per language
-          pair; totals are grouped by currency. Export a job quote as DOCX to send to the client.
+          Стоимость проекта из анализа объема × ставки за слово. Один прайс-лист на языковую
+          пару; итоги группируются по валютам. Котировку задания можно выгрузить в DOCX для заказчика.
         </p>
         <div className="row wrap">
           <select value={quoteCard} onChange={(e) => setQuoteCard(e.target.value)} style={{ maxWidth: 300 }}>
-            <option value="">auto: rate card per language pair…</option>
+            <option value="">авто: прайс-лист по языковой паре…</option>
             {rateCards
                 .filter((c) => c.source_lang === project.source_lang && project.target_langs.includes(c.target_lang))
                 .map((c) => (
                   <option key={c.id} value={c.id}>{c.name} ({c.source_lang}→{c.target_lang}, {c.currency})</option>
                 ))}
           </select>
-          <button className="btn small primary" onClick={() => void calcQuote()}>Calculate quote</button>
+          <button className="btn small primary" onClick={() => void calcQuote()}>Рассчитать котировку</button>
         </div>
         {quote && (
           <>
             <table className="jobs-table" style={{ marginTop: 10 }}>
               <thead>
-                <tr><th>Document</th><th>Target</th><th>Rate card</th><th>Subtotal</th><th>Min charge</th><th>Total</th><th></th></tr>
+                <tr><th>Документ</th><th>Язык</th><th>Прайс-лист</th><th>Промежут.</th><th>Мин. сумма</th><th>Итого</th><th></th></tr>
               </thead>
               <tbody>
                 {quote.jobs.map((jq) => (
@@ -160,36 +156,36 @@ export default function ProjectDashboardPage() {
                     <td>{jq.subtotal.toFixed(2)} {jq.currency}</td>
                     <td>
                       {jq.min_charge_applied
-                        ? <span className="status-chip st-drafted" title="Minimum charge applied">{jq.min_charge.toFixed(2)} applied</span>
+                        ? <span className="status-chip st-drafted" title="Применена минимальная сумма">{jq.min_charge.toFixed(2)} применена</span>
                         : <span className="muted">{jq.min_charge.toFixed(2)}</span>}
                     </td>
                     <td><strong>{jq.total.toFixed(2)} {jq.currency}</strong></td>
                     <td>
                       <button
                         className="btn small"
-                        title="Client-facing DOCX quote"
+                        title="Котировка DOCX для заказчика"
                         onClick={() => downloadJobQuoteExport(jq.job_id, quoteCard ? Number(quoteCard) : undefined)
                           .catch((e: Error) => setError(e.message))}
                       >
-                        Quote DOCX
+                        Котировка DOCX
                       </button>
                     </td>
                   </tr>
                 ))}
                 {quote.jobs.length === 0 && (
-                  <tr><td colSpan={7} className="muted center">No jobs covered by a rate card.</td></tr>
+                  <tr><td colSpan={7} className="muted center">Нет заданий, покрытых прайс-листом.</td></tr>
                 )}
               </tbody>
             </table>
             <div className="row wrap" style={{ marginTop: 8 }}>
               {quote.totals.map((t) => (
                 <span key={t.currency} className="status-chip st-translated">
-                  Project total: {t.total.toFixed(2)} {t.currency}
+                  Итого по проекту: {t.total.toFixed(2)} {t.currency}
                 </span>
               ))}
               {quote.missing_pairs.map((pair) => (
-                <span key={pair} className="status-chip st-new" title="Create a rate card for this pair on the Rates page">
-                  no rate card: {pair}
+                <span key={pair} className="status-chip st-new" title="Создайте прайс-лист для этой пары на странице «Ставки»">
+                  нет прайс-листа: {pair}
                 </span>
               ))}
             </div>
@@ -198,19 +194,19 @@ export default function ProjectDashboardPage() {
       </section>
 
       <section className="card">
-        <h3 className="panel-title">Delivery</h3>
+        <h3 className="panel-title">Отгрузка</h3>
         <p className="muted small-text">
-          Closing the loop: once jobs are submitted, download every target file as a single ZIP
-          (with a manifest), and issue the invoice DOCX — billed work only, same math as the quote.
+          Замыкаем цикл: после сдачи заданий скачайте все целевые файлы одним ZIP (с манифестом)
+          и оформите счет DOCX — только оплаченная работа, математика как в котировке.
         </p>
         <div className="row wrap">
           <button
             className="btn small primary"
             disabled={deliverableCount === 0}
-            title={deliverableCount ? `${deliverableCount} submitted/completed job(s)` : 'Nothing submitted yet'}
+            title={deliverableCount ? `Сданных/завершенных заданий: ${deliverableCount}` : 'Пока ничего не сдано'}
             onClick={() => downloadProjectDelivery(projectId).catch((e: Error) => setError(e.message))}
           >
-            Delivery ZIP ({deliverableCount})
+            Отгрузка ZIP ({deliverableCount})
           </button>
           <button
             className="btn small"
@@ -218,16 +214,16 @@ export default function ProjectDashboardPage() {
             onClick={() => downloadProjectInvoice(projectId, quoteCard ? Number(quoteCard) : undefined)
               .catch((e: Error) => setError(e.message))}
           >
-            Invoice DOCX
+            Счет DOCX
           </button>
         </div>
       </section>
 
       <section className="card">
-        <h3 className="panel-title">Jobs</h3>
+        <h3 className="panel-title">Задания</h3>
         <table className="jobs-table">
           <thead>
-            <tr><th>Document</th><th>Target</th><th>Status</th><th>Assignee</th><th>Deadline</th><th>Progress</th><th>Actions</th></tr>
+            <tr><th>Документ</th><th>Язык</th><th>Статус</th><th>Исполнитель</th><th>Дедлайн</th><th>Прогресс</th><th>Действия</th></tr>
           </thead>
           <tbody>
             {jobs.map((job) => {
@@ -241,10 +237,10 @@ export default function ProjectDashboardPage() {
                   <td className="job-title">{job.document_name}</td>
                   <td className="muted">{job.target_lang}</td>
                   <td>
-                    <span className={`status-chip st-${job.status}`}>{job.status.replace('_', ' ')}</span>
+                    <span className={`status-chip st-${job.status}`}>{STATUS_LABELS[job.status] ?? job.status}</span>
                   </td>
                   <td className="muted">{job.assignee?.username ?? '—'}</td>
-                  <td className={job.is_overdue ? 'overdue' : 'muted'}>{fmtDeadline(job.deadline)}</td>
+                  <td className={job.is_overdue ? 'overdue' : 'muted'}>{fmtDateTime(job.deadline)}</td>
                   <td>
                     <div className="progress-row">
                       <div className="progress-track">
@@ -261,7 +257,7 @@ export default function ProjectDashboardPage() {
                           onChange={(e) => setAssignDraft({ ...assignDraft, [job.id]: { ...draft, assigneeId: e.target.value } })}
                           style={{ width: 110 }}
                         >
-                          <option value="">translator…</option>
+                          <option value="">переводчик…</option>
                           {translators.map((m) => (
                             <option key={m.id} value={m.user.id}>{m.user.username}</option>
                           ))}
@@ -279,47 +275,47 @@ export default function ProjectDashboardPage() {
                             draft.deadline ? new Date(draft.deadline).toISOString() : null,
                           ))}
                         >
-                          Assign
+                          Назначить
                         </button>
                       </span>
                     )}
                     {job.status === 'submitted' && (
                       <>
-                        <button className="btn small primary" onClick={() => act(() => api.completeJob(job.id))}>Complete</button>
+                        <button className="btn small primary" onClick={() => act(() => api.completeJob(job.id))}>Завершить</button>
                         <button
                           className="btn small"
                           onClick={() => {
-                            const comment = window.prompt('Rework comment:');
+                            const comment = window.prompt('Комментарий доработки:');
                             if (comment) void act(() => api.returnJob(job.id, comment));
                           }}
                         >
-                          Return to rework
+                          Вернуть на доработку
                         </button>
                       </>
                     )}
                     {!['completed', 'canceled'].includes(job.status) && (
                       <button
                         className="btn small"
-                        onClick={() => { if (window.confirm('Cancel this job?')) void act(() => api.cancelJob(job.id)); }}
+                        onClick={() => { if (window.confirm('Отменить это задание?')) void act(() => api.cancelJob(job.id)); }}
                       >
-                        Cancel
+                        Отменить
                       </button>
                     )}
                     {(job.status === 'submitted' || job.status === 'completed') && (
-                      <button className="btn small" onClick={() => act(() => downloadJobExport(job.id))}>Download</button>
+                      <button className="btn small" onClick={() => act(() => downloadJobExport(job.id))}>Скачать</button>
                     )}
                   </td>
                 </tr>
               );
             })}
-            {jobs.length === 0 && <tr><td colSpan={7} className="muted center">Upload a document to create jobs.</td></tr>}
+            {jobs.length === 0 && <tr><td colSpan={7} className="muted center">Загрузите документ, чтобы создать задания.</td></tr>}
           </tbody>
         </table>
       </section>
 
       <section className="card">
-        <h3 className="panel-title">Connected resources (TM / TB)</h3>
-        {resources.length === 0 && <div className="muted small-text">Nothing connected yet.</div>}
+        <h3 className="panel-title">Подключенные ресурсы (TM / TB)</h3>
+        {resources.length === 0 && <div className="muted small-text">Пока ничего не подключено.</div>}
         {resources.map((r) => (
           <div key={r.id} className="row notification">
             <span className={`status-chip ${r.tm ? 'st-translated' : 'st-in_progress'}`}>{r.tm ? 'TM' : 'TB'}</span>
@@ -327,26 +323,26 @@ export default function ProjectDashboardPage() {
             <span className="muted small-text">
               {r.tm ? `${r.tm.source_lang}→${r.tm.target_lang}` : `${r.tb?.source_lang}→${r.tb?.target_lang}`}
             </span>
-            <span className="muted small-text">search: {r.use_for_search ? 'yes' : 'no'}</span>
-            {r.tm && <span className="muted small-text">write: {r.use_for_write ? 'yes' : 'no'}</span>}
+            <span className="muted small-text">поиск: {r.use_for_search ? 'да' : 'нет'}</span>
+            {r.tm && <span className="muted small-text">запись: {r.use_for_write ? 'да' : 'нет'}</span>}
             <span className="spacer" />
-            <button className="btn small" onClick={() => act(() => api.disconnectResource(projectId, r.id))}>Disconnect</button>
+            <button className="btn small" onClick={() => act(() => api.disconnectResource(projectId, r.id))}>Отключить</button>
           </div>
         ))}
         <div className="row wrap" style={{ marginTop: 10 }}>
           <select value={newTm} onChange={(e) => { setNewTm(e.target.value); setNewTb(''); }}>
-            <option value="">connect TM…</option>
+            <option value="">подключить TM…</option>
             {tms.filter((t) => t.source_lang === project.source_lang && project.target_langs.includes(t.target_lang))
                 .map((t) => <option key={t.id} value={t.id}>TM: {t.name} ({t.source_lang}→{t.target_lang})</option>)}
           </select>
           <select value={newTb} onChange={(e) => { setNewTb(e.target.value); setNewTm(''); }}>
-            <option value="">connect TB…</option>
+            <option value="">подключить TB…</option>
             {tbs.filter((t) => t.source_lang === project.source_lang && project.target_langs.includes(t.target_lang))
                 .map((t) => <option key={t.id} value={t.id}>TB: {t.name} ({t.source_lang}→{t.target_lang})</option>)}
           </select>
           {newTm && (
             <label className="muted small-text">
-              <input type="checkbox" checked={newTmWrite} onChange={(e) => setNewTmWrite(e.target.checked)} /> use for write
+              <input type="checkbox" checked={newTmWrite} onChange={(e) => setNewTmWrite(e.target.checked)} /> запись в TM
             </label>
           )}
           <button
@@ -359,7 +355,7 @@ export default function ProjectDashboardPage() {
               use_for_write: Boolean(newTm) && newTmWrite,
             })).then(() => { setNewTm(''); setNewTb(''); })}
           >
-            Connect
+            Подключить
           </button>
         </div>
       </section>

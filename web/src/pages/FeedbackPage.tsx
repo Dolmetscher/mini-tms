@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { fmtDateTime } from '../api/labels';
 import type { FeedbackItem, FeedbackKind } from '../api/types';
 
 type KindFilter = FeedbackKind | 'all';
 
 const KINDS: { value: KindFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'bug', label: 'Bugs' },
-  { value: 'idea', label: 'Ideas' },
-  { value: 'question', label: 'Questions' },
-  { value: 'other', label: 'Other' },
+  { value: 'all', label: 'Все' },
+  { value: 'bug', label: 'Ошибки' },
+  { value: 'idea', label: 'Идеи' },
+  { value: 'question', label: 'Вопросы' },
+  { value: 'other', label: 'Другое' },
 ];
 
 const KIND_CHIP: Record<FeedbackKind, string> = {
@@ -20,11 +21,7 @@ const KIND_CHIP: Record<FeedbackKind, string> = {
   other: 'st-translated',
 };
 
-function fmtDate(value: string): string {
-  return new Date(value.endsWith('Z') || value.includes('+') ? value : value + 'Z').toLocaleString();
-}
-
-/** Лента обратной связи (бета): сообщения из кнопки «💬 Feedback» в UI.
+/** Лента обратной связи (бета): сообщения из кнопки «💬 Отзыв» в UI.
  * Читает менеджмент; тип + автор + страница, где нажали кнопку. */
 export default function FeedbackPage() {
   const [items, setItems] = useState<FeedbackItem[]>([]);
@@ -36,7 +33,7 @@ export default function FeedbackPage() {
     setLoading(true);
     api.feedback()
       .then(setItems)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Load failed'))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Не удалось загрузить'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -47,25 +44,25 @@ export default function FeedbackPage() {
   return (
     <>
       <section className="card row wrap">
-        <h3 className="panel-title">Feedback</h3>
+        <h3 className="panel-title">Отзывы</h3>
         <span className="spacer" />
         {KINDS.map((k) => (
           <button key={k.value} className={`btn small ${kind === k.value ? 'primary' : ''}`} onClick={() => setKind(k.value)}>
             {k.label}
           </button>
         ))}
-        <button className="btn small" onClick={() => void load()}>Refresh</button>
+        <button className="btn small" onClick={() => void load()}>Обновить</button>
       </section>
 
       {error && <div className="alert">{error}</div>}
 
       <section className="card">
         <p className="muted small-text">
-          Messages sent from the floating «💬 Feedback» button; the page where the user pressed it
-          is attached automatically — follow the link to reproduce a bug faster.
+          Сообщения из плавающей кнопки «💬 Отзыв»; страница, где нажали кнопку, прикладывается
+          автоматически — перейдите по ссылке, чтобы быстрее воспроизвести баг.
         </p>
 
-        {loading && <div className="muted">Loading…</div>}
+        {loading && <div className="muted">Загрузка…</div>}
 
         <div className="feedback-list">
           {visible.map((fb) => (
@@ -73,9 +70,9 @@ export default function FeedbackPage() {
               <div className="row wrap" style={{ gap: 6, alignItems: 'center' }}>
                 <span className={`status-chip ${KIND_CHIP[fb.kind]}`}>{fb.kind}</span>
                 <b>{fb.author.username}</b>
-                <span className="muted">{fmtDate(fb.created_at)}</span>
+                <span className="muted">{fmtDateTime(fb.created_at)}</span>
                 {fb.page && (
-                  <Link className="feedback-page-link" to={fb.page} title="Open the page where feedback was sent">
+                  <Link className="feedback-page-link" to={fb.page} title="Открыть страницу, откуда отправили отзыв">
                     {fb.page}
                   </Link>
                 )}
@@ -84,7 +81,7 @@ export default function FeedbackPage() {
             </div>
           ))}
           {!loading && visible.length === 0 && (
-            <div className="muted center">No feedback yet — the beta testers are quiet so far.</div>
+            <div className="muted center">Отзывов пока нет — бета-тестеры молчат.</div>
           )}
         </div>
       </section>

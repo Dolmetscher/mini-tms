@@ -7,7 +7,6 @@ import { login } from '../api';
 import type { Account, Membership } from '../api';
 import { DEFAULT_API_BASE } from '../config';
 import { colors, common } from '../theme';
-
 interface Props {
   onLoggedIn: (
     base: string, token: string, userId: number, username: string,
@@ -40,7 +39,7 @@ export default function LoginScreen({ onLoggedIn, lastBase }: Props) {
         setMemberships(res.memberships);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      setError(err instanceof Error ? err.message : 'Не удалось войти');
     } finally {
       setBusy(false);
     }
@@ -55,11 +54,11 @@ export default function LoginScreen({ onLoggedIn, lastBase }: Props) {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.card}>
         <Text style={styles.brand}>Mini-TMS CAT</Text>
-        <Text style={common.muted}>Sign in to translate and manage jobs.</Text>
+        <Text style={common.muted}>Войдите, чтобы переводить и управлять заданиями.</Text>
 
         {memberships ? (
           <>
-            <Text style={[styles.label, { marginTop: 20 }]}>Choose organization:</Text>
+            <Text style={[styles.label, { marginTop: 20 }]}>Выберите организацию:</Text>
             {memberships.map((m) => (
               <TouchableOpacity key={m.org_id} style={[common.button, styles.orgButton]} onPress={() => pickOrg(m)}>
                 <Text style={common.buttonText}>{m.org_name} — {m.role}</Text>
@@ -68,14 +67,14 @@ export default function LoginScreen({ onLoggedIn, lastBase }: Props) {
           </>
         ) : (
           <>
-            <Text style={styles.label}>Server address</Text>
+            <Text style={styles.label}>Адрес сервера</Text>
             <TextInput
               style={common.input} value={base} onChangeText={setBase}
               autoCapitalize="none" keyboardType="url" placeholder="http://192.168.1.42:8000"
             />
-            <Text style={styles.label}>Username</Text>
+            <Text style={styles.label}>Имя пользователя</Text>
             <TextInput style={common.input} value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} />
-            <Text style={styles.label}>Password</Text>
+            <Text style={styles.label}>Пароль</Text>
             <TextInput style={common.input} value={password} onChangeText={setPassword} secureTextEntry />
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -85,12 +84,12 @@ export default function LoginScreen({ onLoggedIn, lastBase }: Props) {
               onPress={() => void doLogin()} disabled={!username || !password || busy}
             >
               <Text style={[common.buttonText, common.primaryButtonText]}>
-                {busy ? 'Signing in…' : 'Sign in'}
+                {busy ? 'Вход…' : 'Войти'}
               </Text>
             </TouchableOpacity>
 
             <Text style={styles.hint}>
-              Emulator uses http://10.0.2.2:8000 — for a real phone enter your computer's Wi-Fi IP.
+              Эмулятор использует http://10.0.2.2:8000 — для телефона введите IP компьютера в Wi-Fi сети.
             </Text>
           </>
         )}

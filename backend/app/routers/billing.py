@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api", tags=["billing"])
 def _card_or_404(ctx: Context, card_id: int) -> models.RateCard:
     card = ctx.db.get(models.RateCard, card_id)
     if card is None or card.org_id != ctx.org_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Rate card not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Прайс-лист не найден")
     return card
 
 
@@ -30,7 +30,7 @@ def _check_categories(rates: dict[str, float]) -> None:
     if unknown:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Unknown rate categories: {', '.join(sorted(unknown))}",
+            detail=f"Неизвестные категории ставок: {', '.join(sorted(unknown))}",
         )
 
 
@@ -67,7 +67,7 @@ def create_rate_card(body: schemas.RateCardCreate, ctx: Context = Depends(get_co
     if duplicate is not None:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail=f"Rate card for {body.source_lang}->{body.target_lang} in {body.currency.upper()} already exists",
+            detail=f"Прайс-лист для {body.source_lang}->{body.target_lang} в {body.currency.upper()} уже существует",
         )
     card = models.RateCard(
         org_id=ctx.org_id,
@@ -131,7 +131,7 @@ def _quote_card(ctx: Context, job: models.Job, rate_card_id: int | None) -> mode
         pair = f"{project.source_lang}->{job.target_lang}"
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"No rate card for language pair {pair}: create one in /api/rates",
+            detail=f"Нет прайс-листа для пары {pair}: создайте его на странице «Ставки»",
         )
     return card
 
@@ -162,7 +162,7 @@ def get_project_quote(
     if not quote["jobs"] and not quote["missing_pairs"]:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail="Project has no jobs to quote",
+            detail="В проекте нет заданий для котировки",
         )
     return schemas.ProjectQuote(**quote)
 
@@ -217,7 +217,7 @@ def get_project_invoice(
     if not has_submitted:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail="No submitted jobs to invoice yet",
+            detail="Нет сданных заданий для счета",
         )
     return schemas.ProjectInvoice(**quotes.project_invoice(ctx.db, project, rate_card_id))
 
@@ -235,12 +235,12 @@ def export_project_invoice(
     if not invoice["jobs"] and not invoice["missing_pairs"]:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail="No submitted jobs to invoice yet",
+            detail="Нет сданных заданий для счета",
         )
     if not invoice["jobs"]:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"No rate card for language pairs: {', '.join(invoice['missing_pairs'])}",
+            detail=f"Нет прайс-листов для пар: {', '.join(invoice['missing_pairs'])}",
         )
     audit.audit(ctx.db, ctx.org_id, ctx.user_id, "project.invoice_export", "project", project.id, {
         "invoice_no": invoice["invoice_no"],

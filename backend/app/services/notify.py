@@ -30,18 +30,29 @@ EXTERNAL_TYPES = frozenset({
 })
 
 _EVENT_TEXT = {
-    "job_assigned": "New job assigned",
-    "job_accepted": "Job accepted",
-    "job_declined": "Job declined",
-    "job_submitted": "Job submitted for review",
-    "job_returned": "Job returned to rework",
-    "job_reassigned": "Job reassigned to another translator",
-    "job_canceled": "Job canceled",
-    "deadline_reminder": "Deadline reminder",
+    "job_assigned": "Назначено новое задание",
+    "job_accepted": "Задание принято",
+    "job_declined": "Задание отклонено",
+    "job_submitted": "Задание сдано на проверку",
+    "job_returned": "Задание возвращено на доработку",
+    "job_reassigned": "Задание переназначено другому переводчику",
+    "job_canceled": "Задание отменено",
+    "deadline_reminder": "Напоминание о дедлайне",
 }
 
 # Поля payload, интересные человеку (порядок = порядок строк в письме).
 _PAYLOAD_KEYS = ("document", "project", "target_lang", "deadline", "offset", "comment", "reason")
+
+# Человекочитаемые подписи полей в письме/Telegram (ключ -> метка).
+_KEY_LABELS = {
+    "document": "Документ",
+    "project": "Проект",
+    "target_lang": "Язык перевода",
+    "deadline": "Дедлайн",
+    "offset": "Срок через",
+    "comment": "Комментарий",
+    "reason": "Причина",
+}
 
 
 def _render(type_: str, payload: dict) -> tuple[str, str]:
@@ -49,9 +60,9 @@ def _render(type_: str, payload: dict) -> tuple[str, str]:
     lines = [f"Mini-TMS: {title}"]
     for key in _PAYLOAD_KEYS:
         if payload.get(key) is not None:
-            lines.append(f"{key}: {payload[key]}")
+            lines.append(f"{_KEY_LABELS.get(key, key)}: {payload[key]}")
     if payload.get("job_id") is not None:
-        lines.append(f"job: #{payload['job_id']}")
+        lines.append(f"Задание: #{payload['job_id']}")
     return lines[0], "\n".join(lines)
 
 

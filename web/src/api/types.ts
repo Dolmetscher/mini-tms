@@ -323,13 +323,13 @@ export const RATE_CATEGORY_CODES = [
 ] as const;
 
 export const RATE_CATEGORY_LABELS: Record<string, string> = {
-  exact: 'Exact 100%',
-  fuzzy_95_99: 'Fuzzy 95–99%',
-  fuzzy_85_94: 'Fuzzy 85–94%',
-  fuzzy_75_84: 'Fuzzy 75–84%',
-  fuzzy_60_74: 'Fuzzy 60–74%',
-  repetition: 'Repetitions',
-  no_match: 'No match',
+  exact: 'Точные 100%',
+  fuzzy_95_99: 'Нечеткие 95–99%',
+  fuzzy_85_94: 'Нечеткие 85–94%',
+  fuzzy_75_84: 'Нечеткие 75–84%',
+  fuzzy_60_74: 'Нечеткие 60–74%',
+  repetition: 'Повторы',
+  no_match: 'Без совпадений',
 };
 
 // --- Отчеты ---

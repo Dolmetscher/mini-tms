@@ -20,7 +20,7 @@ def list_notifications(limit: int = 50, ctx: Context = Depends(get_context)):
 def _mine_or_404(ctx: Context, notification_id: int) -> models.Notification:
     notification = ctx.db.get(models.Notification, notification_id)
     if notification is None or notification.recipient_id != ctx.user_id or notification.org_id != ctx.org_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Notification not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Уведомление не найдено")
     return notification
 
 

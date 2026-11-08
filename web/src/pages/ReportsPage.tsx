@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, downloadOrgBackup, getActiveOrg } from '../api/client';
 import type { ProductivityRow } from '../api/types';
-
 type Period = 'all' | '30' | '90';
 
 /** Отчеты для менеджмента: продуктивность переводчиков + бэкап организации. */
@@ -15,7 +14,7 @@ export default function ReportsPage() {
     const updatedAfter = period === 'all' ? undefined : new Date(Date.now() - Number(period) * 86400_000).toISOString();
     api.productivity(updatedAfter)
       .then(setRows)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Load failed'));
+      .catch((e) => setError(e instanceof Error ? e.message : 'Не удалось загрузить'));
   }, [period]);
 
   useEffect(() => { void load(); }, [load]);
@@ -25,22 +24,22 @@ export default function ReportsPage() {
     try {
       await downloadOrgBackup(orgId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Backup failed');
+      setError(err instanceof Error ? err.message : 'Не удалось создать бэкап');
     }
   };
 
   return (
     <>
       <section className="card row wrap">
-        <h3 className="panel-title">Translator productivity</h3>
+        <h3 className="panel-title">Продуктивность переводчиков</h3>
         <span className="spacer" />
         {(['all', '30', '90'] as Period[]).map((p) => (
           <button key={p} className={`btn small ${period === p ? 'primary' : ''}`} onClick={() => setPeriod(p)}>
-            {p === 'all' ? 'All time' : `Last ${p} days`}
+            {p === 'all' ? 'Все время' : `Последние ${p} дней`}
           </button>
         ))}
-        <button className="btn small" onClick={() => void backup()} title="Full JSON backup of this organization">
-          Backup JSON
+        <button className="btn small" onClick={() => void backup()} title="Полный JSON-бэкап организации">
+          Бэкап JSON
         </button>
       </section>
 
@@ -48,14 +47,15 @@ export default function ReportsPage() {
 
       <section className="card">
         <p className="muted small-text">
-          Confirmed words and job flow per translator; average LQA score counts jobs with marked
-          errors (trivial 100s don’t inflate the average). Overdue = deadline passed, job not closed.
+          Подтвержденные слова и поток заданий по переводчикам; средний LQA-скор считает задания
+          с размеченными ошибками (пустые сотни не завышают среднее). Просрочено = дедлайн прошел,
+          задание не закрыто.
         </p>
         <table className="jobs-table">
           <thead>
             <tr>
-              <th>Translator</th><th>Assigned</th><th>Completed</th><th>Overdue</th>
-              <th>Confirmed words</th><th>LQA jobs</th><th>Avg LQA</th>
+              <th>Переводчик</th><th>Назначено</th><th>Завершено</th><th>Просрочено</th>
+              <th>Подтвержд. слов</th><th>LQA заданий</th><th>Ср. LQA</th>
             </tr>
           </thead>
           <tbody>
@@ -77,7 +77,7 @@ export default function ReportsPage() {
               </tr>
             ))}
             {rows.length === 0 && (
-              <tr><td colSpan={7} className="muted center">No translators with jobs in this period.</td></tr>
+              <tr><td colSpan={7} className="muted center">Переводчиков с заданиями за период нет.</td></tr>
             )}
           </tbody>
         </table>
