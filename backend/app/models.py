@@ -248,6 +248,49 @@ class JobReminder(Base):
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class RateCard(Base):
+    """Прайс-лист организации: ставка за слово по категориям анализа объема.
+
+    Биллинг — недостающее звено «анализ → деньги»: котировка задания считается
+    как сумма слов категории × ставка категории (практика Trados/memoQ:
+    скидка за совпадения зашита в ставку). Валюта — на карте; минимальная
+    сумма заказа (min_charge) — стандарт индустрии для мелких заказов.
+    """
+    __tablename__ = "rate_cards"
+    __table_args__ = (
+        UniqueConstraint("org_id", "source_lang", "target_lang", "currency", name="uq_rate_card"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    source_lang: Mapped[str] = mapped_column(String(8))
+    target_lang: Mapped[str] = mapped_column(String(8))
+    currency: Mapped[str] = mapped_column(String(8), default="EUR")
+    # {category_code: ставка за слово}; категории = config.RATE_CATEGORIES
+    rates: Mapped[dict] = mapped_column(JSON, default=dict)
+    min_charge: Mapped[float] = mapped_column(default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SegmentRevision(Base):
+    """История правок сегмента (track changes CAT-инструментов).
+
+    Каждое изменение target_text фиксируется снапшотом: кто, когда, какой текст.
+    Позволяет ревьюеру и менеджеру увидеть эволюцию перевода сегмента —
+    аналог History/Track Changes в Trados/memoQ.
+    """
+    __tablename__ = "segment_revisions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    segment_id: Mapped[int] = mapped_column(ForeignKey("segments.id"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    target_text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    author: Mapped["User"] = relationship()
+
+
 class Notification(Base):
     __tablename__ = "notifications"
 

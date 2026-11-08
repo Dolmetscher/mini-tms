@@ -3,8 +3,9 @@ from datetime import timedelta
 from sqlalchemy.orm import Session
 
 from .auth import hash_password
+from . import config
 from .models import (
-    Document, Job, Membership, Organization, Project, ProjectResource, Segment,
+    Document, Job, Membership, Organization, Project, ProjectResource, RateCard, Segment,
     TB, TBEntry, TM, TMEntry, User,
 )
 from .services.words import count_words
@@ -59,6 +60,13 @@ def seed_if_empty(db: Session) -> None:
     db.flush()
     for term, translation, note, status in DEMO_TB:
         db.add(TBEntry(tb_id=tb.id, term=term, translation=translation, note=note, status=status))
+
+    # Демо-прайс-лист en→ru: котировка в проекте работает из коробки
+    db.add(RateCard(
+        org_id=org.id, name="Standard EN→RU", source_lang="en", target_lang="ru",
+        currency=config.RATE_DEFAULT_CURRENCY, rates=dict(config.RATE_DEFAULTS),
+        min_charge=15.0,
+    ))
 
     project = Project(
         org_id=org.id,

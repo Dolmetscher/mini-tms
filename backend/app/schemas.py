@@ -411,3 +411,91 @@ class NotificationOut(AuthoredModel):
     payload: dict
     created_at: datetime
     read_at: Optional[datetime]
+
+
+# --- биллинг: прайс-листы и котировки ---
+
+
+class RateCardCreate(BaseModel):
+    """rates можно передать частично: недостающие категории возьмутся из дефолтов."""
+    name: str = Field(min_length=1, max_length=200)
+    source_lang: str = Field(min_length=2, max_length=8)
+    target_lang: str = Field(min_length=2, max_length=8)
+    currency: str = Field(default="EUR", min_length=1, max_length=8)
+    rates: dict[str, float] = Field(default_factory=dict)
+    min_charge: float = Field(default=0.0, ge=0)
+
+
+class RateCardUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    currency: Optional[str] = Field(default=None, min_length=1, max_length=8)
+    rates: Optional[dict[str, float]] = None
+    min_charge: Optional[float] = Field(default=None, ge=0)
+
+
+class RateCardOut(AuthoredModel):
+    id: int
+    name: str
+    source_lang: str
+    target_lang: str
+    currency: str
+    rates: dict[str, float]
+    min_charge: float
+    created_at: datetime
+
+
+class QuoteLine(BaseModel):
+    code: str
+    label: str
+    segments: int
+    words: int
+    rate: float
+    amount: float
+
+
+class JobQuote(BaseModel):
+    job_id: int
+    document_name: str
+    target_lang: str
+    rate_card: str
+    currency: str
+    lines: list[QuoteLine]
+    subtotal: float
+    min_charge: float
+    min_charge_applied: bool
+    total: float
+
+
+class ProjectQuote(BaseModel):
+    project_id: int
+    project_name: str
+    source_lang: str
+    jobs: list[JobQuote]
+    totals: list[dict]  # [{currency, total}] — по одной валюте на строку
+    missing_pairs: list[str]  # языковые пары без прайс-листа
+
+
+# --- история правок сегмента (track changes) ---
+
+
+class SegmentRevisionOut(BaseModel):
+    id: int
+    segment_id: int
+    position: int
+    author: UserRef
+    target_text: str
+    created_at: datetime
+
+
+# --- отчеты ---
+
+
+class ProductivityRow(BaseModel):
+    """Продуктивность переводчика за период: объем, задания, просрочки, LQA."""
+    user: UserRef
+    jobs_assigned: int
+    jobs_completed: int
+    jobs_overdue: int
+    words_confirmed: int
+    lqa_jobs: int
+    avg_lqa_score: Optional[float] = None

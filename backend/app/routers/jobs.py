@@ -129,6 +129,11 @@ async def save_segment(segment_id: int, body: schemas.SegmentUpdate, ctx: Contex
             )
 
     if body.target_text is not None:
+        if body.target_text != segment.target_text:
+            # История правок (track changes): снапшот нового значения — кто/когда/что.
+            ctx.db.add(models.SegmentRevision(
+                segment_id=segment.id, author_id=ctx.user_id, target_text=body.target_text,
+            ))
         if segment.confirmed and body.target_text != segment.target_text:
             segment.confirmed = False  # редактирование подтвержденного снимает подтверждение
         segment.target_text = body.target_text
@@ -332,6 +337,39 @@ async def delete_lqa_error(job_id: int, error_id: int, ctx: Context = Depends(ge
         ),
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- История правок сегмента (track changes) ---
+
+
+@router.get("/segments/{segment_id}/history", response_model=list[schemas.SegmentRevisionOut])
+def segment_history(segment_id: int, ctx: Context = Depends(get_context)):
+    """Все изменения перевода сегмента: автор, время, текст (хронология).
+
+    Участники задания видят эволюцию перевода — кто и что менял, включая
+    пред-перевод и автопропагацию (автор — инициатор действия).
+    """
+    segment = ctx.db.get(models.Segment, segment_id)
+    if segment is None or segment.job.org_id != ctx.org_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Segment not found")
+    ensure_job_access(ctx, segment.job)
+    revisions = (
+        ctx.db.query(models.SegmentRevision)
+        .filter(models.SegmentRevision.segment_id == segment.id)
+        .order_by(models.SegmentRevision.created_at, models.SegmentRevision.id)
+        .all()
+    )
+    return [
+        schemas.SegmentRevisionOut(
+            id=rev.id,
+            segment_id=segment.id,
+            position=segment.position,
+            author=schemas.UserRef(id=rev.author.id, username=rev.author.username),
+            target_text=rev.target_text,
+            created_at=rev.created_at,
+        )
+        for rev in revisions
+    ]
 
 
 # --- Комментарии к сегментам (диалог переводчик ↔ менеджер) ---

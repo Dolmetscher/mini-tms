@@ -17,7 +17,7 @@ from .database import Base, SessionLocal, engine
 from .deps import ROLE_TRANSLATOR
 from .helpers import naive_utc, utcnow
 from .models import Job, JobReminder, Membership
-from .routers import auth, jobs, notifications, orgs, projects, tb, tm
+from .routers import auth, billing, jobs, notifications, orgs, projects, reports, tb, tm
 from .seed import seed_if_empty
 from .services import notify
 from .ws import manager
@@ -86,7 +86,7 @@ def _check_deadlines() -> None:
         db.commit()
 
 
-app = FastAPI(title="Mini-TMS API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Mini-TMS API", version="0.3.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -102,6 +102,8 @@ app.include_router(projects.router)
 app.include_router(jobs.router)
 app.include_router(tm.router)
 app.include_router(tb.router)
+app.include_router(billing.router)
+app.include_router(reports.router)
 app.include_router(notifications.router)
 
 

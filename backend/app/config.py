@@ -50,3 +50,22 @@ LQA_PENALTY = {  # severity -> штрафные баллы
 LQA_PASS_SCORE = float(os.environ.get("TMS_LQA_PASS_SCORE", "95.0"))
 LQA_CATEGORIES = ("accuracy", "terminology", "fluency", "style", "locale", "consistency")
 LQA_SEVERITIES = ("minor", "major", "critical")
+
+# Прайс-листы и котировки (биллинг). Категории совпадают с анализом объема:
+# ставка за слово применяется к «сырым» словам категории (практика котировок
+# Trados/memoQ: скидка зашита в ставку категории, а не в объем). Дефолты —
+# иллюстративные; реальный прайс задается в прайс-листе организации.
+RATE_CATEGORIES = (
+    "exact", "fuzzy_95_99", "fuzzy_85_94", "fuzzy_75_84",
+    "fuzzy_60_74", "repetition", "no_match",
+)
+RATE_DEFAULT_CURRENCY = os.environ.get("TMS_RATE_CURRENCY", "EUR")
+RATE_DEFAULTS: dict[str, float] = {
+    "exact": 0.03,
+    "fuzzy_95_99": 0.06,
+    "fuzzy_85_94": 0.075,
+    "fuzzy_75_84": 0.085,
+    "fuzzy_60_74": 0.10,
+    "repetition": 0.03,
+    "no_match": 0.10,
+}

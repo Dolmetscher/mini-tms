@@ -35,6 +35,8 @@ _CATEGORIES: list[tuple[str, str, float]] = [
 _BAND_CODE = {
     f"fuzzy_{low}_{high}": (low, high) for low, high, _ in config.ANALYSIS_BANDS
 }
+# Публичные подписи категорий (общие для анализа, котировок и отчетов).
+CATEGORY_LABELS: dict[str, str] = {code: label for code, label, _ in _CATEGORIES}
 
 
 def _project_tm_entries(db: Session, job: models.Job) -> list[tuple[models.TMEntry, str]]:
@@ -173,6 +175,9 @@ def pre_translate(db: Session, job: models.Job, user_id: int, min_score: int = 1
             segment.target_text = match[1]
             segment.translation_status = "translated"
             segment.updated_by = user_id
+            db.add(models.SegmentRevision(
+                segment_id=segment.id, author_id=user_id, target_text=match[1],
+            ))
             if match[0] == 100:
                 filled_exact += 1
             else:
@@ -193,6 +198,9 @@ def pre_translate(db: Session, job: models.Job, user_id: int, min_score: int = 1
             segment.target_text = donor
             segment.translation_status = "translated"
             segment.updated_by = user_id
+            db.add(models.SegmentRevision(
+                segment_id=segment.id, author_id=user_id, target_text=donor,
+            ))
             propagated += 1
 
     mandatory_left = sum(
@@ -221,5 +229,8 @@ def propagate_translation(db: Session, job: models.Job, segment: models.Segment)
             other.target_text = segment.target_text
             other.translation_status = "translated"
             other.updated_by = segment.updated_by
+            db.add(models.SegmentRevision(
+                segment_id=other.id, author_id=segment.updated_by, target_text=segment.target_text,
+            ))
             propagated.append(other)
     return propagated

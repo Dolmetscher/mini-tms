@@ -69,3 +69,47 @@ def render_bilingual(
     buffer = io.BytesIO()
     doc.save(buffer)
     return buffer.getvalue()
+
+
+def render_quote(quote: dict, source_lang: str) -> bytes:
+    """Котировка задания в DOCX — документ для заказчика.
+
+    Таблица: категория совпадения / сегменты / слова / ставка / сумма;
+    в конце — промежуточный итог, минимальная сумма (если применилась)
+    и итог к оплате. Числа уже округлены сервисом котировок.
+    """
+    doc = open_docx()
+    doc.add_heading("Translation Quote", level=1)
+    doc.add_paragraph(f"Document: {quote['document_name']}")
+    doc.add_paragraph(
+        f"Language pair: {source_lang} \u2192 {quote['target_lang']}   ·   "
+        f"Rate card: {quote['rate_card']}"
+    )
+
+    table = doc.add_table(rows=1, cols=5)
+    table.style = "Table Grid"
+    header = table.rows[0].cells
+    header[0].text = "Category"
+    header[1].text = "Segments"
+    header[2].text = "Words"
+    header[3].text = f"Rate, {quote['currency']}/word"
+    header[4].text = f"Amount, {quote['currency']}"
+    for line in quote["lines"]:
+        cells = table.add_row().cells
+        cells[0].text = line["label"]
+        cells[1].text = str(line["segments"])
+        cells[2].text = str(line["words"])
+        cells[3].text = f"{line['rate']:.4f}".rstrip("0").rstrip(".") or "0"
+        cells[4].text = f"{line['amount']:.2f}"
+
+    doc.add_paragraph(f"Subtotal: {quote['subtotal']:.2f} {quote['currency']}")
+    if quote["min_charge_applied"]:
+        doc.add_paragraph(
+            f"Minimum charge applied: {quote['min_charge']:.2f} {quote['currency']}"
+        )
+    total = doc.add_paragraph()
+    total.add_run(f"Total: {quote['total']:.2f} {quote['currency']}").bold = True
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()
