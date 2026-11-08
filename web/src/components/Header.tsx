@@ -31,6 +31,8 @@ export default function Header() {
           <>
             <Link to="/projects" className={location.pathname.startsWith('/projects') ? 'active' : ''}>Projects</Link>
             <Link to="/resources" className={location.pathname.startsWith('/resources') ? 'active' : ''}>TM / TB</Link>
+            <Link to="/rates" className={location.pathname.startsWith('/rates') ? 'active' : ''}>Rates</Link>
+            <Link to="/reports" className={location.pathname.startsWith('/reports') ? 'active' : ''}>Reports</Link>
           </>
         )}
         <Link to="/notifications" className={location.pathname.startsWith('/notifications') ? 'active' : ''}>

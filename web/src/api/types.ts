@@ -216,6 +216,88 @@ export interface SegmentNote {
   created_at: string;
 }
 
+// --- История правок сегмента (track changes) ---
+
+export interface SegmentRevision {
+  id: number;
+  segment_id: number;
+  position: number;
+  author: User;
+  target_text: string;
+  created_at: string;
+}
+
+// --- Биллинг: прайс-листы и котировки ---
+
+export interface RateCard {
+  id: number;
+  name: string;
+  source_lang: string;
+  target_lang: string;
+  currency: string;
+  rates: Record<string, number>;
+  min_charge: number;
+  created_at: string;
+}
+
+export interface QuoteLine {
+  code: string;
+  label: string;
+  segments: number;
+  words: number;
+  rate: number;
+  amount: number;
+}
+
+export interface JobQuote {
+  job_id: number;
+  document_name: string;
+  target_lang: string;
+  rate_card: string;
+  currency: string;
+  lines: QuoteLine[];
+  subtotal: number;
+  min_charge: number;
+  min_charge_applied: boolean;
+  total: number;
+}
+
+export interface ProjectQuote {
+  project_id: number;
+  project_name: string;
+  source_lang: string;
+  jobs: JobQuote[];
+  totals: { currency: string; total: number }[];
+  missing_pairs: string[];
+}
+
+export const RATE_CATEGORY_CODES = [
+  'exact', 'fuzzy_95_99', 'fuzzy_85_94', 'fuzzy_75_84',
+  'fuzzy_60_74', 'repetition', 'no_match',
+] as const;
+
+export const RATE_CATEGORY_LABELS: Record<string, string> = {
+  exact: 'Exact 100%',
+  fuzzy_95_99: 'Fuzzy 95–99%',
+  fuzzy_85_94: 'Fuzzy 85–94%',
+  fuzzy_75_84: 'Fuzzy 75–84%',
+  fuzzy_60_74: 'Fuzzy 60–74%',
+  repetition: 'Repetitions',
+  no_match: 'No match',
+};
+
+// --- Отчеты ---
+
+export interface ProductivityRow {
+  user: User;
+  jobs_assigned: number;
+  jobs_completed: number;
+  jobs_overdue: number;
+  words_confirmed: number;
+  lqa_jobs: number;
+  avg_lqa_score: number | null;
+}
+
 
 export interface AppNotification {
   id: number;

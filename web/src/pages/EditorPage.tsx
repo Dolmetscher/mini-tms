@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError, downloadBilingualExport } from '../api/client';
 import type {
-  AnalysisReport, JobDetail, MTSuggestion, QAReport, Segment, SegmentNote, TBHit, TMSuggestion, WsEvent,
+  AnalysisReport, JobDetail, MTSuggestion, QAReport, Segment, SegmentNote, SegmentRevision, TBHit, TMSuggestion, WsEvent,
 } from '../api/types';
 import { useAuth } from '../state/AuthContext';
 import { useUpdates } from '../ws/useUpdates';
@@ -99,6 +99,9 @@ export default function EditorPage() {
   const [notes, setNotes] = useState<SegmentNote[]>([]);
   const [noteText, setNoteText] = useState('');
   const [notedIds, setNotedIds] = useState<Set<number>>(new Set());
+  // история правок сегмента (track changes)
+  const [history, setHistory] = useState<SegmentRevision[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -111,6 +114,9 @@ export default function EditorPage() {
   activeRef.current = active;
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  // ref вместо состояния: persist (useCallback без deps) видит актуальное значение
+  const historyOpenRef = useRef(false);
+  historyOpenRef.current = historyOpen;
 
   const load = useCallback(async () => {
     if (!Number.isFinite(jobId)) return;
@@ -144,6 +150,9 @@ export default function EditorPage() {
       } : prev);
       localStorage.removeItem(draftKey(segment.id));
       setSaveState('saved');
+      if (historyOpenRef.current) {
+        api.segmentHistory(segment.id).then(setHistory).catch(() => setHistory([]));
+      }
       return true;
     } catch (err) {
       if (err instanceof ApiError) {
@@ -184,6 +193,8 @@ export default function EditorPage() {
     setUndoStack([]);
     setRedoStack([]);
     setMt(null);
+    setHistory([]);
+    setHistoryOpen(false);
     const local = localStorage.getItem(draftKey(seg.id));
     if (local) {
       try {
@@ -214,6 +225,20 @@ export default function EditorPage() {
       })
       .catch(() => setNotes([]));
   }, [job]);
+
+  const toggleHistory = async () => {
+    if (!active) return;
+    if (historyOpen) {
+      setHistoryOpen(false);
+      return;
+    }
+    try {
+      setHistory(await api.segmentHistory(active.id));
+    } catch {
+      setHistory([]);
+    }
+    setHistoryOpen(true);
+  };
 
   // WS: чужие правки и смены статуса задания
   useUpdates((event: WsEvent) => {
@@ -270,6 +295,13 @@ export default function EditorPage() {
     }
     return list;
   }, [job, filter, search, qaReport]);
+
+  // Должен идти ДО условных return (Rules of Hooks): после загрузки задания
+  // число хуков не должно меняться между рендерами.
+  const replaceCount = useMemo(() => {
+    if (!job || !findText) return 0;
+    return job.segments.filter((s) => s.target_text.includes(findText)).length;
+  }, [job, findText]);
 
   if (!token) return <Navigate to="/login" replace />;
   if (!job) return <div className="muted center">{error || 'Loading…'}</div>;
@@ -395,11 +427,6 @@ export default function EditorPage() {
       setPreTrBusy(false);
     }
   };
-
-  const replaceCount = useMemo(() => {
-    if (!job || !findText) return 0;
-    return job.segments.filter((s) => s.target_text.includes(findText)).length;
-  }, [job, findText]);
 
   const applyReplace = async () => {
     if (!job || !findText || replaceBusy) return;
@@ -631,6 +658,43 @@ export default function EditorPage() {
                     Add
                   </button>
                 </div>
+              </div>
+
+              <div className="history-panel">
+                <button className="btn small" onClick={() => void toggleHistory()}>
+                  {historyOpen ? '▾' : '▸'} History {history.length ? `(${history.length})` : ''}
+                </button>
+                {historyOpen && (
+                  <>
+                    <div className="muted small-text">
+                      Track changes of this segment — every saved edit, author and time.
+                      {canEdit && ' Restore puts an old version back into the draft.'}
+                    </div>
+                    {history.map((rev) => (
+                      <div key={rev.id} className={`note-item ${rev.author.username === (user?.username ?? '') ? 'mine' : ''}`}>
+                        <span className="note-meta">
+                          <strong>{rev.author.username}</strong>
+                          <span className="muted"> · {fmtNoteTime(rev.created_at)}</span>
+                        </span>
+                        <div className="note-body">
+                          {rev.target_text || '—'}
+                          {canEdit && (
+                            <button
+                              className="btn small" style={{ marginLeft: 6 }}
+                              title="Вернуть эту версию в черновик"
+                              onClick={() => onChangeDraft(rev.target_text)}
+                            >
+                              Restore
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {history.length === 0 && (
+                      <div className="muted small-text">No edits recorded yet for this segment.</div>
+                    )}
+                  </>
+                )}
               </div>
 
               {canEdit ? (

@@ -1,13 +1,25 @@
 import type {
   AnalysisReport, AppNotification, DocumentInfo, Job, JobDetail, LQAError, LQAReport, LoginResponse,
-  Member, MTSuggestion, PreTranslateResult, Project, QAReport, Resource, Segment, SegmentNote,
-  TBEntry, TBHit, TBInfo, TMEntry, TMInfo, TMSuggestion, User,
+  Member, MTSuggestion, PreTranslateResult, ProductivityRow, Project, ProjectQuote, QAReport, RateCard,
+  Resource, Segment, SegmentNote, SegmentRevision, TBEntry, TBHit, TBInfo, TMEntry, TMInfo, TMSuggestion,
+  User,
 } from './types';
+
+/** Дефолтный адрес API: env-переменная сборки → origin страницы (SPA с бэкенда
+ *  работает «одним URL» без ручного ввода адреса) → localhost:8000 для vite dev. */
+function defaultApiBase(): string {
+  const env = import.meta.env.VITE_API_BASE as string | undefined;
+  if (env) return env;
+  if (typeof window !== 'undefined' && window.location.protocol.startsWith('http')
+      && !window.location.origin.startsWith('http://localhost:5173')) {
+    return window.location.origin;
+  }
+  return 'http://localhost:8000';
+}
 
 let API_BASE =
   localStorage.getItem('tms_api_base') ??
-  (import.meta.env.VITE_API_BASE as string | undefined) ??
-  'http://localhost:8000';
+  defaultApiBase();
 
 /** Адрес сервера в рантайме (десктоп/SPA): хранится в localStorage. */
 export function getApiBase(): string {
@@ -105,6 +117,14 @@ export async function downloadTbExportTbx(tbId: number): Promise<void> {
 
 export async function downloadBilingualExport(jobId: number): Promise<void> {
   return downloadFile(`/api/jobs/${jobId}/export-bilingual`, `job-${jobId}-bilingual.docx`);
+}
+
+export async function downloadJobQuoteExport(jobId: number, rateCardId?: number): Promise<void> {
+  return downloadFile(`/api/jobs/${jobId}/quote/export${q({ rate_card_id: rateCardId })}`, `job-${jobId}-quote.docx`);
+}
+
+export async function downloadOrgBackup(orgId: number): Promise<void> {
+  return downloadFile(`/api/orgs/${orgId}/export`, `mini-tms-backup-org${orgId}.json`);
 }
 
 export class ApiError extends Error {
@@ -224,6 +244,21 @@ export const api = {
   segmentNotes: (segmentId: number) => request<SegmentNote[]>(`/api/segments/${segmentId}/notes`),
   addSegmentNote: (segmentId: number, body: string) =>
     request<SegmentNote>(`/api/segments/${segmentId}/notes`, { method: 'POST', body: JSON.stringify({ body }) }),
+  segmentHistory: (segmentId: number) => request<SegmentRevision[]>(`/api/segments/${segmentId}/history`),
+
+  // Биллинг: прайс-листы и котировки
+  rateCards: () => request<RateCard[]>('/api/rates'),
+  createRateCard: (body: { name: string; source_lang: string; target_lang: string; currency?: string; rates?: Record<string, number>; min_charge?: number }) =>
+    request<RateCard>('/api/rates', { method: 'POST', body: JSON.stringify(body) }),
+  updateRateCard: (id: number, body: { name?: string; currency?: string; rates?: Record<string, number>; min_charge?: number }) =>
+    request<RateCard>(`/api/rates/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteRateCard: (id: number) => request<void>(`/api/rates/${id}`, { method: 'DELETE' }),
+  projectQuote: (projectId: number, rateCardId?: number) =>
+    request<ProjectQuote>(`/api/projects/${projectId}/quote${q({ rate_card_id: rateCardId })}`),
+
+  // Отчеты
+  productivity: (updatedAfter?: string) =>
+    request<ProductivityRow[]>(`/api/reports/productivity${q({ updated_after: updatedAfter })}`),
 
   // TM / TB
   tms: () => request<TMInfo[]>('/api/tm/tms'),

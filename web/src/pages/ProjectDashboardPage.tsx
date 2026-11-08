@@ -1,7 +1,7 @@
 import { ChangeEvent, useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { api, downloadJobExport, getActiveOrg } from '../api/client';
-import type { DocumentInfo, Job, Member, Project, Resource, TMInfo, TBInfo } from '../api/types';
+import { api, downloadJobExport, downloadJobQuoteExport, getActiveOrg } from '../api/client';
+import type { DocumentInfo, Job, Member, Project, ProjectQuote, RateCard, Resource, TMInfo, TBInfo } from '../api/types';
 import { useUpdates } from '../ws/useUpdates';
 
 function fmtDeadline(value: string | null): string {
@@ -25,6 +25,10 @@ export default function ProjectDashboardPage() {
   const [newTmWrite, setNewTmWrite] = useState(true);
   // локальное состояние назначения: jobId -> {assigneeId, deadline}
   const [assignDraft, setAssignDraft] = useState<Record<number, { assigneeId: string; deadline: string }>>({});
+  // котировка: прайс-лист и результат расчета
+  const [rateCards, setRateCards] = useState<RateCard[]>([]);
+  const [quoteCard, setQuoteCard] = useState('');
+  const [quote, setQuote] = useState<ProjectQuote | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -46,6 +50,21 @@ export default function ProjectDashboardPage() {
   }, [projectId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Прайс-листы для выбора при котировке (данные менеджмента)
+  useEffect(() => {
+    api.rateCards().then(setRateCards).catch(() => setRateCards([]));
+  }, []);
+
+  const calcQuote = async () => {
+    setError('');
+    try {
+      setQuote(await api.projectQuote(projectId, quoteCard ? Number(quoteCard) : undefined));
+    } catch (err) {
+      setQuote(null);
+      setError(err instanceof Error ? err.message : 'Quote failed');
+    }
+  };
 
   useUpdates((event) => {
     if (event.type.startsWith('job_') || event.type === 'segment_updated') void load();
@@ -107,6 +126,75 @@ export default function ProjectDashboardPage() {
       </section>
 
       {error && <div className="alert">{error}</div>}
+
+      <section className="card">
+        <h3 className="panel-title">Quote</h3>
+        <p className="muted small-text">
+          Cost of this project from the volume analysis × per-word rates. One rate card per language
+          pair; totals are grouped by currency. Export a job quote as DOCX to send to the client.
+        </p>
+        <div className="row wrap">
+          <select value={quoteCard} onChange={(e) => setQuoteCard(e.target.value)} style={{ maxWidth: 300 }}>
+            <option value="">auto: rate card per language pair…</option>
+            {rateCards
+                .filter((c) => c.source_lang === project.source_lang && project.target_langs.includes(c.target_lang))
+                .map((c) => (
+                  <option key={c.id} value={c.id}>{c.name} ({c.source_lang}→{c.target_lang}, {c.currency})</option>
+                ))}
+          </select>
+          <button className="btn small primary" onClick={() => void calcQuote()}>Calculate quote</button>
+        </div>
+        {quote && (
+          <>
+            <table className="jobs-table" style={{ marginTop: 10 }}>
+              <thead>
+                <tr><th>Document</th><th>Target</th><th>Rate card</th><th>Subtotal</th><th>Min charge</th><th>Total</th><th></th></tr>
+              </thead>
+              <tbody>
+                {quote.jobs.map((jq) => (
+                  <tr key={jq.job_id}>
+                    <td className="job-title">{jq.document_name}</td>
+                    <td className="muted">{jq.target_lang}</td>
+                    <td className="muted">{jq.rate_card}</td>
+                    <td>{jq.subtotal.toFixed(2)} {jq.currency}</td>
+                    <td>
+                      {jq.min_charge_applied
+                        ? <span className="status-chip st-drafted" title="Minimum charge applied">{jq.min_charge.toFixed(2)} applied</span>
+                        : <span className="muted">{jq.min_charge.toFixed(2)}</span>}
+                    </td>
+                    <td><strong>{jq.total.toFixed(2)} {jq.currency}</strong></td>
+                    <td>
+                      <button
+                        className="btn small"
+                        title="Client-facing DOCX quote"
+                        onClick={() => downloadJobQuoteExport(jq.job_id, quoteCard ? Number(quoteCard) : undefined)
+                          .catch((e: Error) => setError(e.message))}
+                      >
+                        Quote DOCX
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {quote.jobs.length === 0 && (
+                  <tr><td colSpan={7} className="muted center">No jobs covered by a rate card.</td></tr>
+                )}
+              </tbody>
+            </table>
+            <div className="row wrap" style={{ marginTop: 8 }}>
+              {quote.totals.map((t) => (
+                <span key={t.currency} className="status-chip st-translated">
+                  Project total: {t.total.toFixed(2)} {t.currency}
+                </span>
+              ))}
+              {quote.missing_pairs.map((pair) => (
+                <span key={pair} className="status-chip st-new" title="Create a rate card for this pair on the Rates page">
+                  no rate card: {pair}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
 
       <section className="card">
         <h3 className="panel-title">Jobs</h3>

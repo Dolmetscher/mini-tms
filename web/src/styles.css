@@ -740,6 +740,34 @@ textarea {
   white-space: pre-wrap;
 }
 
+/* --- история правок сегмента (track changes) --- */
+.history-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+/* --- прайс-листы (Rates) --- */
+.rate-card-block {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: #fafafa;
+}
+
+.rate-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 110px;
+}
+
+.rate-input {
+  width: 90px;
+}
+
 /* --- LQA-ревью (оценка качества) --- */
 .lqa-modal {
   width: 720px;

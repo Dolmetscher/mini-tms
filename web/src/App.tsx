@@ -6,6 +6,8 @@ import LoginPage from './pages/LoginPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ProjectDashboardPage from './pages/ProjectDashboardPage';
 import ProjectsPage from './pages/ProjectsPage';
+import RatesPage from './pages/RatesPage';
+import ReportsPage from './pages/ReportsPage';
 import ResourcesPage from './pages/ResourcesPage';
 import { AuthProvider } from './state/AuthContext';
 
@@ -29,6 +31,8 @@ export default function App() {
           <Route path="/projects" element={<Shell><ProjectsPage /></Shell>} />
           <Route path="/projects/:id" element={<Shell><ProjectDashboardPage /></Shell>} />
           <Route path="/resources" element={<Shell><ResourcesPage /></Shell>} />
+          <Route path="/rates" element={<Shell><RatesPage /></Shell>} />
+          <Route path="/reports" element={<Shell><ReportsPage /></Shell>} />
           <Route path="/notifications" element={<Shell><NotificationsPage /></Shell>} />
           <Route path="*" element={<Navigate to="/jobs" replace />} />
         </Routes>
