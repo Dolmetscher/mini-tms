@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, downloadTbExport, downloadTbExportTbx, downloadTmExport } from '../api/client';
+import { api, downloadTbExport, downloadTbExportTbx, downloadTmExport, downloadTmExportCsv } from '../api/client';
 import type { TBEntry, TBInfo, TMEntry, TMInfo } from '../api/types';
 
 type Tab = 'tm' | 'tb';
@@ -123,6 +123,10 @@ export default function ResourcesPage() {
     void act(async () => downloadTmExport(tmId));
   };
 
+  const exportTmCsv = (tmId: number) => {
+    void act(async () => downloadTmExportCsv(tmId));
+  };
+
   const exportTb = (tbId: number) => {
     void act(async () => downloadTbExport(tbId));
   };
@@ -177,6 +181,10 @@ export default function ResourcesPage() {
                 <button className="btn small" onClick={() => exportTm(selectedTm)}
                         title="Экспорт в TMX 1.4b — обмен памятью с другими CAT-инструментами">
                   Export TMX
+                </button>
+                <button className="btn small" onClick={() => exportTmCsv(selectedTm)}
+                        title="Экспорт в CSV (source,target) — тот же шаблон, что и импорт">
+                  Export CSV
                 </button>
               </>
             )}

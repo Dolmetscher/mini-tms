@@ -31,6 +31,13 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=4)  # как при регистрации пользователя
 
 
+class NewToken(BaseModel):
+    """Свежий токен после смены пароля: сессия текущего клиента продолжается."""
+
+    access_token: str
+    token_type: str = "bearer"
+
+
 class UserOut(AuthoredModel):
     id: int
     username: str

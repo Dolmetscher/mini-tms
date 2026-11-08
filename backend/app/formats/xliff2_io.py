@@ -104,6 +104,42 @@ def load_segments(content: bytes) -> tuple[list[str], list[str]]:
     return segments, notes
 
 
+# state сегмента, означающие «перевод уже сделан» (XLIFF 2.0: initial по умолчанию)
+_TRANSLATED_STATES = {"translated", "reviewed", "final"}
+
+
+def load_translations(content: bytes) -> list[str | None]:
+    """Существующие переводы из <target> (state translated/reviewed/final).
+
+    Список выровнен с load_segments тем же обходом (тот же пропуск пустых
+    source и ignorable); None = перевода нет. Значения — с токенами тегов,
+    в терминах редактора. Импортируются как черновики — вычитка обязательна.
+    """
+    tree = etree.parse(io.BytesIO(content))
+    root = tree.getroot()
+    translations: list[str | None] = []
+    for seg in root.iter():
+        if _local(seg.tag) != "segment":
+            continue
+        source = _child_by_local(seg, "source")
+        if source is None:
+            continue
+        src_text, _ = _inline_to_tokens(source)
+        if not src_text.strip():
+            continue
+        if (seg.get("state") or "initial") not in _TRANSLATED_STATES:
+            translations.append(None)
+            continue
+        target = _child_by_local(seg, "target")
+        if target is None:
+            translations.append(None)
+            continue
+        tgt_text, _ = _inline_to_tokens(target)
+        tgt_text = tgt_text.strip()
+        translations.append(tgt_text or None)
+    return translations
+
+
 def _find_by_local_id(element, names: tuple[str, ...], tag_id: str):
     for child in element.iter():
         if _local(child.tag) in names and child.get("id") == tag_id:
@@ -197,6 +233,10 @@ def export_file(original: bytes, targets: list[str]) -> bytes:
             for child in list(target):
                 target.remove(child)
         target.text = None
+        # state по спецификации 2.0: default "initial" означал бы «перевод
+        # не начат» — помечаем translated; reviewed/final не понижаем.
+        if (seg.get("state") or "initial") not in _TRANSLATED_STATES:
+            seg.set("state", "translated")
 
         tokens = [c for c in _TOKEN_RE.split(translation) if c]
         i = 0

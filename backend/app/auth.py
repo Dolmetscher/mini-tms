@@ -32,21 +32,31 @@ def verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(candidate, digest)
 
 
-def create_access_token(username: str) -> str:
+def create_access_token(username: str, pwd_ver: int = 1) -> str:
     payload = {
         "sub": username,
+        # Версия пароля: после смены пароля инкрементируется — токены со
+        # старой версией отклоняются (stateless-ревокация всех сессий).
+        "pwd_ver": pwd_ver,
         "exp": datetime.now(timezone.utc) + timedelta(minutes=config.ACCESS_TOKEN_EXPIRE_MINUTES),
     }
     return jwt.encode(payload, config.SECRET_KEY, algorithm="HS256")
 
 
-def decode_token(token: str) -> str:
-    """Возвращает username из токена или бросает jwt.PyJWTError."""
+def decode_token(token: str) -> tuple[str, int]:
+    """Возвращает (username, pwd_ver) из токена или бросает jwt.PyJWTError.
+
+    Токены, выданные до внедрения версионирования, несут старую версию 1.
+    """
     payload = jwt.decode(token, config.SECRET_KEY, algorithms=["HS256"])
     username = payload.get("sub")
     if not username:
         raise jwt.InvalidTokenError("missing sub claim")
-    return username
+    try:
+        pwd_ver = int(payload.get("pwd_ver", 1))
+    except (TypeError, ValueError):
+        pwd_ver = 1
+    return username, pwd_ver
 
 
 def get_current_user(
@@ -59,10 +69,13 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        username = decode_token(token)
+        username, pwd_ver = decode_token(token)
     except jwt.PyJWTError:
         raise credentials_exc
     user = db.query(User).filter(User.username == username).first()
     if user is None:
+        raise credentials_exc
+    if user.pwd_ver != pwd_ver:
+        # Пароль сменили после выдачи этого токена — сессия отозвана.
         raise credentials_exc
     return user

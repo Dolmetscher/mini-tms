@@ -65,8 +65,13 @@ def list_entries(
     tm = _tm_or_404(ctx, tm_id)
     query = ctx.db.query(models.TMEntry).filter(models.TMEntry.tm_id == tm.id)
     if q:
+        # Поиск по обеим сторонам (паритет с TB): при ведении памяти часто
+        # ищут по переводу — «как мы это уже переводили».
         needle = normalize(q)
-        entries = [e for e in query.all() if needle in normalize(e.source_text)]
+        entries = [
+            e for e in query.all()
+            if needle in normalize(e.source_text) or needle in normalize(e.target_text)
+        ]
     else:
         entries = query.all()
     response.headers["X-Total-Count"] = str(len(entries))
@@ -243,6 +248,36 @@ def export_tmx(tm_id: int, ctx: Context = Depends(get_context)):
         content=payload,
         media_type="application/x-tmx+xml",
         headers={"Content-Disposition": content_disposition(f"{safe_name}.tmx")},
+    )
+
+
+@router.get("/tms/{tm_id}/export-csv")
+def export_csv(tm_id: int, ctx: Context = Depends(get_context)):
+    """Экспорт TM в CSV — тот же шаблон, что и импорт (source,target).
+
+    Паритет с TB: легковесный обмен табличками (Excel/Sheets) без XML.
+    """
+    ctx.require_role("admin", "pm")
+    tm = _tm_or_404(ctx, tm_id)
+    entries = (
+        ctx.db.query(models.TMEntry)
+        .filter(models.TMEntry.tm_id == tm.id)
+        .order_by(models.TMEntry.id)
+        .all()
+    )
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["source", "target"])
+    for entry in entries:
+        writer.writerow([entry.source_text, entry.target_text])
+    safe_name = tm.name.replace('"', "")
+    audit.audit(ctx.db, ctx.org_id, ctx.user_id, "tm.export_csv", "tm", tm.id, {"entries": len(entries)})
+    ctx.db.commit()
+    # utf-8-sig: BOM нужен Excel'ю; импорт читает utf-8-sig и BOM отбрасывает
+    return Response(
+        content=buffer.getvalue().encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": content_disposition(f"{safe_name}.csv")},
     )
 
 

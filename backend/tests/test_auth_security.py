@@ -80,19 +80,22 @@ def test_change_password_flow(client, pwtester):
         "current_password": "pw-old-123", "new_password": "pw-new-456",
     }).status_code == 401
 
-    # Успешная смена
+    # Успешная смена: 200 + свежий токен (сессия клиента продолжается)
     res = client.post("/api/change-password", headers=pwtester, json={
         "current_password": "pw-old-123", "new_password": "pw-new-456",
     })
-    assert res.status_code == 204, res.text
+    assert res.status_code == 200, res.text
+    fresh_token = res.json()["access_token"]
+    assert fresh_token
 
     # Старый пароль больше не работает, новый — работает
     assert login(client, "pwtester", "pw-old-123") is None
     assert login(client, "pwtester", "pw-new-456") is not None
 
-    # Токен, выданный ДО смены, остается валидным до истечения (stateless JWT,
-    # задокументированное ограничение MVP)
-    res = client.get("/api/me", headers=pwtester)
+    # Токен, выданный ДО смены, отозван (версия пароля не совпадает);
+    # свежий токен из ответа — работает
+    assert client.get("/api/me", headers=pwtester).status_code == 401
+    res = client.get("/api/me", headers={"Authorization": f"Bearer {fresh_token}", "X-Org-Id": str(ORG)})
     assert res.status_code == 200, res.text
 
 

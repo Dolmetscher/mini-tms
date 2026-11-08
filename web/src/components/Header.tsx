@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { api } from '../api/client';
+import { api, storeToken } from '../api/client';
 import type { AppNotification } from '../api/types';
 import { useAuth } from '../state/AuthContext';
 import { useUpdates } from '../ws/useUpdates';
@@ -28,7 +28,10 @@ export default function Header() {
     const next = window.prompt('New password (min 4 chars, must differ):');
     if (!next) return;
     try {
-      await api.changePassword(current, next);
+      const { access_token } = await api.changePassword(current, next);
+      // Смена пароля отзывает все токены: сохраняем свежий, чтобы сессия
+      // продолжилась без повторного входа.
+      storeToken(access_token);
       window.alert('Password updated.');
     } catch (err) {
       window.alert(err instanceof Error ? err.message : 'Password change failed');

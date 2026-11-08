@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from ..auth import create_access_token, get_current_user, hash_password, verify_password
 from ..database import get_db
 from ..models import Membership, Organization, User
-from ..schemas import LoginRequest, MembershipOut, PasswordChange, TokenResponse, UserOut
+from ..schemas import LoginRequest, MembershipOut, NewToken, PasswordChange, TokenResponse, UserOut
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
@@ -90,7 +90,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         .all()
     )
     return TokenResponse(
-        access_token=create_access_token(user.username),
+        access_token=create_access_token(user.username, user.pwd_ver),
         user=UserOut.model_validate(user),
         memberships=[
             MembershipOut(org_id=m.org_id, org_name=org.name, role=m.role)
@@ -117,7 +117,7 @@ def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     )
 
 
-@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/change-password", response_model=NewToken)
 def change_password(
     body: PasswordChange,
     user: User = Depends(get_current_user),
@@ -125,8 +125,9 @@ def change_password(
 ):
     """Смена собственного пароля: текущий обязателен, новый — не равен ему.
 
-    Токены живут до истечения (stateless JWT): смена пароля не «выкидывает»
-    другие сессии — осознанное ограничение MVP.
+    Версионирование пароля отзывает все ранее выданные токены (stateless-
+    ревокация), поэтому клиенту возвращается свежий — сессия продолжается
+    без повторного входа; остальные сессии этого пользователя сбрасываются.
     """
     if not verify_password(body.current_password, user.password_hash):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
@@ -136,5 +137,6 @@ def change_password(
             detail="New password must be different from the current one",
         )
     user.password_hash = hash_password(body.new_password)
+    user.pwd_ver += 1
     db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return NewToken(access_token=create_access_token(user.username, user.pwd_ver))

@@ -123,17 +123,30 @@ def _process_document(document_id: int) -> None:
             document.processing_error = "Document contains no text"
             db.commit()
             return
+        # Существующие переводы (XLIFF state/approved) — черновиками, как
+        # пред-перевод: подтверждение и QA остаются на переводчике.
+        translations = segmentation.load_translations(document.format, content)
         jobs = db.query(models.Job).filter(models.Job.document_id == document.id).all()
         for job in jobs:
             for position, source in enumerate(segments):
-                db.add(
-                    models.Segment(
-                        job_id=job.id,
-                        position=position,
-                        source_text=source,
-                        source_words=words.count_words(source),
-                    )
+                translation = translations[position] if translations else None
+                segment = models.Segment(
+                    job_id=job.id,
+                    position=position,
+                    source_text=source,
+                    source_words=words.count_words(source),
                 )
+                if translation:
+                    segment.target_text = translation
+                    segment.translation_status = "translated"
+                db.add(segment)
+                if translation:
+                    db.flush()  # id для ревизии
+                    db.add(models.SegmentRevision(
+                        segment_id=segment.id,
+                        author_id=document.uploaded_by,
+                        target_text=translation,
+                    ))
         document.processing_status = "ready"
         document.processing_notes = notes
         db.commit()

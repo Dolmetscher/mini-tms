@@ -856,3 +856,134 @@ def test_cjk_word_count():
     assert count_words("안녕하세요") == 5              # хангыль
     assert count_words("Mix 混合 text") == 4          # 1 + 2 + 1
     assert count_words('Тег <x id="1"/> не в счет') == 4  # тег не считается
+
+
+XLIFF2_STATE_DOC = """<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:2.0" version="2.0" srcLang="en" trgLang="ru">
+ <file id="f1">
+  <unit id="u1">
+   <segment id="s1" state="translated">
+    <source>Hello <ph id="1">{name}</ph> world</source>
+    <target>Привет <ph id="1">{name}</ph> мир</target>
+   </segment>
+   <segment id="s2" state="initial">
+    <source>Fresh segment</source>
+    <target></target>
+   </segment>
+   <segment id="s3" state="reviewed">
+    <source>Already reviewed <pc id="b">bold</pc> text</source>
+    <target>Уже проверенный <pc id="b">жирный</pc> текст</target>
+   </segment>
+  </unit>
+ </file>
+</xliff>""".encode("utf-8")
+
+
+def test_xliff2_state_import_and_export(client, pm, ann):
+    """state translated/reviewed -> импорт target черновиком; initial — нет."""
+    res = client.post("/api/projects", headers=pm, json={
+        "name": "Xliff2State", "source_lang": "en", "target_langs": ["ru"],
+    })
+    project = res.json()["id"]
+    res = client.post(f"/api/projects/{project}/documents", headers=pm,
+                      files={"file": ("state.xlf", io.BytesIO(XLIFF2_STATE_DOC), "application/x-xliff+xml")})
+    assert res.status_code == 201, res.text
+    document_id = res.json()["id"]
+    assert client.get(f"/api/documents/{document_id}", headers=pm).json()["processing_status"] == "ready"
+
+    job = next(j for j in client.get(f"/api/jobs?project_id={project}", headers=pm).json())
+    members = client.get(f"/api/orgs/{ORG}/members", headers=pm).json()
+    ann_id = next(m["user"]["id"] for m in members if m["user"]["username"] == "ann")
+    client.post(f"/api/jobs/{job['id']}/assign", headers=pm, json={"assignee_id": ann_id})
+    client.post(f"/api/jobs/{job['id']}/accept", headers=ann)
+    detail = client.get(f"/api/jobs/{job['id']}", headers=ann).json()
+    seg1, seg2, seg3 = detail["segments"]
+
+    # state=translated: target импортирован черновиком (вычитка обязательна)
+    assert seg1["target_text"] == 'Привет <x id="1"/> мир'
+    assert seg1["confirmed"] is False
+    assert seg1["translation_status"] == "translated"
+    # state=initial: пустой target не импортируется
+    assert seg2["target_text"] == "" and seg2["translation_status"] == "untranslated"
+    # state=reviewed: тоже импортируется, токены pc -> g
+    assert seg3["target_text"] == 'Уже проверенный <g id="b">жирный</g> текст'
+
+    # переводчик подтверждает все и сдает
+    for seg, text in ((seg1, seg1["target_text"]), (seg3, seg3["target_text"])):
+        client.patch(f"/api/segments/{seg['id']}", headers=ann,
+                     json={"target_text": text, "confirmed": True})
+    client.patch(f"/api/segments/{seg2['id']}", headers=ann,
+                 json={"target_text": "Новый сегмент", "confirmed": True})
+    assert client.post(f"/api/jobs/{job['id']}/submit", headers=ann).status_code == 200
+
+    res = client.get(f"/api/jobs/{job['id']}/export", headers=pm)
+    assert res.status_code == 200
+    tree = etree.fromstring(res.content)
+
+    def local(el):
+        return etree.QName(el).localname if isinstance(el.tag, str) else ""
+
+    segs = [el for el in tree.iter() if local(el) == "segment"]
+    s1, s2, s3 = segs
+    # state проставлен при экспорте; reviewed не понижен до translated
+    assert s1.get("state") == "translated"
+    assert s2.get("state") == "translated"
+    assert s3.get("state") == "reviewed"
+    # импортированный target не потерялся при экспорте (переподтвержден как есть)
+    t1 = next(c for c in s1 if local(c) == "target")
+    ph = next(c for c in t1 if local(c) == "ph")
+    assert ph.text == "{name}" and t1.text == "Привет " and ph.tail == " мир"
+
+
+def test_xliff12_approved_import(client, pm, ann):
+    """1.2: approved=yes / target@state -> импорт target; экспорт ставит state."""
+    doc = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<xliff version="1.2"><file source-language="en" target-language="ru" datatype="plaintext"><body>'
+        '<trans-unit id="1" approved="yes"><source>Done unit</source>'
+        '<target>Готовый юнит</target></trans-unit>'
+        '<trans-unit id="2"><source>Empty unit</source></trans-unit>'
+        '<trans-unit id="3"><target state="translated">Переведенный</target>'
+        '<source>State unit</source></trans-unit>'
+        "</body></file></xliff>"
+    ).encode("utf-8")
+    res = client.post("/api/projects", headers=pm, json={
+        "name": "Xliff12Approved", "source_lang": "en", "target_langs": ["ru"],
+    })
+    project = res.json()["id"]
+    res = client.post(f"/api/projects/{project}/documents", headers=pm,
+                      files={"file": ("approved.xliff", io.BytesIO(doc), "application/x-xliff+xml")})
+    assert res.status_code == 201, res.text
+    document_id = res.json()["id"]
+    assert client.get(f"/api/documents/{document_id}", headers=pm).json()["processing_status"] == "ready"
+
+    job = next(j for j in client.get(f"/api/jobs?project_id={project}", headers=pm).json())
+    members = client.get(f"/api/orgs/{ORG}/members", headers=pm).json()
+    ann_id = next(m["user"]["id"] for m in members if m["user"]["username"] == "ann")
+    client.post(f"/api/jobs/{job['id']}/assign", headers=pm, json={"assignee_id": ann_id})
+    client.post(f"/api/jobs/{job['id']}/accept", headers=ann)
+    detail = client.get(f"/api/jobs/{job['id']}", headers=ann).json()
+    seg1, seg2, seg3 = detail["segments"]
+    assert seg1["target_text"] == "Готовый юнит" and seg1["confirmed"] is False
+    assert seg2["target_text"] == "" and seg2["translation_status"] == "untranslated"
+    # target стоит в trans-unit ПЕРЕД source — парсинг не зависит от порядка
+    assert seg3["target_text"] == "Переведенный"
+
+    for seg in (seg1, seg3):
+        client.patch(f"/api/segments/{seg['id']}", headers=ann,
+                     json={"target_text": seg["target_text"], "confirmed": True})
+    client.patch(f"/api/segments/{seg2['id']}", headers=ann,
+                 json={"target_text": "Пустой юнит", "confirmed": True})
+    assert client.post(f"/api/jobs/{job['id']}/submit", headers=ann).status_code == 200
+
+    res = client.get(f"/api/jobs/{job['id']}/export", headers=pm)
+    tree = etree.fromstring(res.content)
+
+    def local(el):
+        return etree.QName(el).localname if isinstance(el.tag, str) else ""
+
+    units = [u for u in tree.iter() if local(u) == "trans-unit"]
+    for unit in units:
+        target = next(c for c in unit if local(c) == "target")
+        # экспорт помечает переведенность; approved атрибут trans-unit не трогаем
+        assert target.get("state") == "translated"

@@ -123,6 +123,45 @@ def load_segments(content: bytes) -> tuple[list[str], list[str]]:
     return segments, notes
 
 
+# state на <target> в 1.2: перевод уже сделан (подтвержден выше уровня needs-*)
+_TRANSLATED_STATES = {"translated", "signed-off", "final"}
+
+
+def load_translations(content: bytes) -> list[str | None]:
+    """Существующие переводы из <target> (1.2: approved=yes или state
+    translated/signed-off/final; 2.0 — делегируется xliff2_io).
+
+    Список выровнен с load_segments тем же обходом; None = перевода нет.
+    Импортируются как черновики — вычитка обязательна.
+    """
+    if _is_version_2(content):
+        return xliff2_io.load_translations(content)
+    tree = etree.parse(io.BytesIO(content))
+    root = tree.getroot()
+    translations: list[str | None] = []
+    for unit in root.iter():
+        if _local(unit.tag) != "trans-unit":
+            continue
+        source = _child_by_local(unit, "source")
+        if source is None:
+            continue
+        src_text, _ = _inline_to_tokens(source)
+        if not src_text.strip():
+            continue
+        target = _child_by_local(unit, "target")
+        if target is None:
+            translations.append(None)
+            continue
+        state = (target.get("state") or "").strip()
+        if unit.get("approved") != "yes" and state not in _TRANSLATED_STATES:
+            translations.append(None)
+            continue
+        tgt_text, _ = _inline_to_tokens(target)
+        tgt_text = tgt_text.strip()
+        translations.append(tgt_text or None)
+    return translations
+
+
 def export_file(original: bytes, targets: list[str]) -> bytes:
     if _is_version_2(original):
         return xliff2_io.export_file(original, targets)
@@ -142,6 +181,10 @@ def export_file(original: bytes, targets: list[str]) -> bytes:
             for child in list(target):
                 target.remove(child)
         target.text = None
+        # state на <target> (опционален в 1.2): needs-* означало бы
+        # «перевода нет» — помечаем translated; signed-off/final не понижаем.
+        if (target.get("state") or "") not in _TRANSLATED_STATES:
+            target.set("state", "translated")
 
         # Модель XLIFF: bpt/ept/x — соседи внутри target; переводимый текст лежит
         # в target.text и хвостах (tail) этих элементов. Payload (внутренний текст

@@ -24,6 +24,18 @@ def load_segments(fmt: str, content: bytes) -> tuple[list[str], list[str]]:
     raise ValueError(f"Unsupported format: {fmt}")
 
 
+def load_translations(fmt: str, content: bytes) -> list[str | None] | None:
+    """Существующие переводы из файла (XLIFF state/approved), выровненные
+    с load_segments; None для форматов без встроенных переводов.
+
+    Практика CAT: файл из другого инструмента часто уже несет <target> —
+    они импортируются как черновики (вычитка обязательна), как пред-перевод.
+    """
+    if fmt == "xliff":
+        return xliff_io.load_translations(content)
+    return None
+
+
 def export_file(fmt: str, original: bytes, targets: list[str]) -> bytes:
     if fmt == "txt":
         return txt_io.export_file(original, targets)

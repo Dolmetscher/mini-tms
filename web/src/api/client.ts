@@ -107,6 +107,10 @@ export async function downloadTmExport(tmId: number): Promise<void> {
   return downloadFile(`/api/tm/tms/${tmId}/export`, `tm-${tmId}.tmx`);
 }
 
+export async function downloadTmExportCsv(tmId: number): Promise<void> {
+  return downloadFile(`/api/tm/tms/${tmId}/export-csv`, `tm-${tmId}.csv`);
+}
+
 export async function downloadTbExport(tbId: number): Promise<void> {
   return downloadFile(`/api/tb/tbs/${tbId}/export`, `tb-${tbId}.csv`);
 }
@@ -217,7 +221,7 @@ export const api = {
     request<LoginResponse>('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   me: () => request<LoginResponse>('/api/me'),
   changePassword: (currentPassword: string, newPassword: string) =>
-    request<void>('/api/change-password', {
+    request<{ access_token: string }>('/api/change-password', {
       method: 'POST',
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     }),

@@ -268,3 +268,51 @@ def test_tmx_import_duplicate_source_in_one_file(client, pm):
     entries = client.get(f"/api/tm/tms/{tm_id}/entries", headers=pm).json()
     assert len(entries) == 1
     assert entries[0]["target_text"] == "Guarde el fichero. (v2)"
+
+
+def test_tm_export_csv_roundtrip_and_target_search(client, pm):
+    res = client.post("/api/tm/tms", headers=pm, json={
+        "name": "CSV Export TM", "source_lang": "en", "target_lang": "ru",
+    })
+    tm_id = res.json()["id"] if res.status_code == 201 else next(
+        t["id"] for t in client.get("/api/tm/tms", headers=pm).json() if t["name"] == "CSV Export TM"
+    )
+    for src, tgt in (
+        ("Save the file.", "Сохраните файл."),
+        ('Close the "door".', 'Закройте "дверь".'),
+        ("Multi\nline, entry", "Многострочная\nзапись, с запятой"),
+    ):
+        client.post(f"/api/tm/tms/{tm_id}/entries", headers=pm,
+                    json={"source_text": src, "target_text": tgt})
+
+    res = client.get(f"/api/tm/tms/{tm_id}/export-csv", headers=pm)
+    assert res.status_code == 200, res.text
+    assert res.headers["content-type"].startswith("text/csv")
+    # BOM для Excel, как у TB-экспорта
+    assert res.content.startswith(b"\xef\xbb\xbf")
+    # RFC 5987 в имени файла
+    assert "attachment" in res.headers.get("content-disposition", "")
+
+    # round-trip: экспорт импортируется обратно без потерь (в новый TM)
+    res2 = client.post("/api/tm/tms", headers=pm, json={
+        "name": "CSV Roundtrip TM", "source_lang": "en", "target_lang": "ru",
+    })
+    tm2 = res2.json()["id"] if res2.status_code == 201 else next(
+        t["id"] for t in client.get("/api/tm/tms", headers=pm).json() if t["name"] == "CSV Roundtrip TM"
+    )
+    imported = client.post(f"/api/tm/tms/{tm2}/import-csv", headers=pm,
+                           files={"file": ("rt.csv", io.BytesIO(res.content), "text/csv")})
+    assert imported.status_code == 200, imported.text
+    assert imported.json()["added"] == 3, imported.json()
+    entries2 = client.get(f"/api/tm/tms/{tm2}/entries", headers=pm).json()
+    pairs = {(e["source_text"], e["target_text"]) for e in entries2}
+    assert ("Multi\nline, entry", "Многострочная\nзапись, с запятой") in pairs  # запятые и \n пережили CSV
+    assert ('Close the "door".', 'Закройте "дверь".') in pairs
+
+    # поиск по ПЕРЕВОДУ (обе стороны) — паритет с TB
+    res = client.get(f"/api/tm/tms/{tm_id}/entries", headers=pm, params={"q": "Сохраните"})
+    assert res.headers["X-Total-Count"] == "1"
+    assert res.json()[0]["source_text"] == "Save the file."
+    # и по исходнику по-прежнему
+    res = client.get(f"/api/tm/tms/{tm_id}/entries", headers=pm, params={"q": "save the"})
+    assert res.headers["X-Total-Count"] == "1"

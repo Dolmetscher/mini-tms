@@ -10,19 +10,29 @@ import jwt
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from sqlalchemy import inspect, text
 
 from . import config
 from .auth import decode_token
 from .database import Base, SessionLocal, engine
 from .deps import ROLE_TRANSLATOR
 from .helpers import naive_utc, utcnow
-from .models import Job, JobReminder, Membership
+from .models import Job, JobReminder, Membership, User
 from .routers import auth, billing, jobs, notifications, orgs, projects, reports, tb, tm
 from .seed import seed_if_empty
 from .services import notify
 from .ws import manager
 
 logger = logging.getLogger("mini-tms")
+
+
+def _ensure_schema() -> None:
+    """create_all не добавляет колонки к существующим таблицам (SQLite):
+    мини-миграция pwd_ver (stateless-ревокация токенов при смене пароля)."""
+    columns = {c["name"] for c in inspect(engine).get_columns("users")}
+    if "pwd_ver" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN pwd_ver INTEGER NOT NULL DEFAULT 1"))
 
 
 @asynccontextmanager
@@ -33,6 +43,7 @@ async def lifespan(_: FastAPI):
             "Set TMS_SECRET_KEY before exposing the server to other users."
         )
     Base.metadata.create_all(bind=engine)
+    _ensure_schema()
     with SessionLocal() as db:
         seed_if_empty(db)
     manager.set_loop(asyncio.get_running_loop())
@@ -120,21 +131,26 @@ async def ws_updates(websocket: WebSocket, token: str = Query(), org_id: int = Q
     получает только свои задания).
     """
     try:
-        username = decode_token(token)
+        username, pwd_ver = decode_token(token)
     except jwt.PyJWTError:
         await websocket.close(code=1008)
         return
 
     with SessionLocal() as db:
+        user = db.query(User).filter(User.username == username).first()
+        if user is None or user.pwd_ver != pwd_ver:
+            # Пароль сменили после выдачи токена — сессия отозвана.
+            await websocket.close(code=1008)
+            return
         membership = (
             db.query(Membership)
-            .filter(Membership.org_id == org_id, Membership.user.has(username=username))
+            .filter(Membership.org_id == org_id, Membership.user_id == user.id)
             .first()
         )
         if membership is None:
             await websocket.close(code=1008)
             return
-        user_id = membership.user_id
+        user_id = user.id
 
     await manager.connect(user_id, websocket)
     try:
