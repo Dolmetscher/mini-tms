@@ -2,13 +2,13 @@
   "expo": {
     "name": "Mini TMS",
     "slug": "mini-tms",
-    "version": "1.0.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
     "android": {
       "package": "com.dolme.minitms",
-      "versionCode": 1,
+      "versionCode": 2,
       "usesCleartextTraffic": true
     },
     "plugins": [

@@ -47,18 +47,15 @@ CAT (Computer-Assisted Translation) система: организации с и
    при желании `web/dist` можно выложить куда угодно и задать `VITE_API_BASE`.
    Адрес сервера также вводится на экране входа (хранится в localStorage) —
    это позволяет одной сборке работать с любым сервером.
-2. **Windows x64**: готовые установщики —
-   `desktop-builds/Mini-TMS-CAT_0.1.0_x64-setup.exe` (NSIS, 1.7 МБ) и
-   `Mini-TMS-CAT_0.1.0_x64.msi`. Пересборка локально: `desktop\build.cmd`
-   (см. нюансы тулчейна ниже). Требуется только WebView2 (есть в Windows 10/11).
-3. **macOS (dmg, universal — Intel + Apple Silicon)**: собирается в GitHub
-   Actions (`desktop-builds` workflow). Как запустить:
-   ```bash
-   cd mini-tms
-   git remote add origin https://github.com/<user>/mini-tms.git
-   git push -u origin main --tags        # либо без тега: вкладка Actions → desktop-builds → Run workflow
-   ```
-   Артефакты появятся во вкладке Actions. Сборка без подписи — при первом
+2. **Windows x64**: установщики (NSIS `-setup.exe` и `.msi`) собираются в CI
+   и публикуются на странице **Releases** (`Mini-TMS-CAT_0.2.0_x64-setup.exe`);
+   исторические сборки 0.1.0 — в `desktop-builds/`. Пересборка локально:
+   `desktop\build.cmd` (см. нюансы тулчейна ниже). Требуется только WebView2
+   (есть в Windows 10/11).
+3. **macOS (dmg, universal — Intel + Apple Silicon) и Linux (AppImage/deb)**:
+   собираются в GitHub Actions (workflow `desktop-builds`) и при пуще тега `v*`
+   публикуются на странице Releases; без тега — артефакты прогона
+   (Actions → desktop-builds → Run workflow). Сборка без подписи — при первом
    запуске macOS: правый клик по приложению → Open.
 
 Локальная сборка Windows (Tauri 2 + GNU-тулчейн) требует полного MinGW:
@@ -105,7 +102,9 @@ DOCX-котировки и счета) — на русском; в `<html lang="
 используется единый словарь (`web/src/api/labels.ts`, `mobile/src/labels.ts`).
 
 ### 3. Android
-Готовый APK: `mini-tms-debug.apk` (корень) или
+Готовый APK собирается в GitHub Actions (workflow `android-apk`) и при пуще
+тега `v*` публикуется на странице Releases (`Mini-TMS-CAT_<версия>_android.apk`,
+debug-подпись — ставится на любое устройство); локальная сборка —
 `mobile/android/app/build/outputs/apk/debug/app-debug.apk`.
 На экране входа вводится адрес сервера (`10.0.2.2` для эмулятора, IP компьютера
 для телефона в той же Wi-Fi сети). Токены хранятся в SecureStore (§11).
@@ -144,6 +143,25 @@ Nginx Proxy Manager из Portainer; не забудьте проксироват
 исключения и unhandledrejection уходят баг-репортами с пометкой `[auto]` —
 стек, страница, браузер; дедуп по «сообщение + файл:строка», капа на сессию,
 при сбое самой отправки репортер замолкает (`web/src/crashReport.ts`).
+
+### 6. Сборки и CI (GitHub Actions)
+Три воркфлоу в `.github/workflows/`; репозиторий публичный — раннеры бесплатны:
+
+- **docker** — образ «всё-в-одном» (FastAPI + собранный SPA) в GitHub Container
+  Registry: каждый пуш в `main` → тег `latest`, тег `v*` → семвер-тег образа:
+  ```bash
+  docker pull ghcr.io/dolmetscher/mini-tms:latest   # или :0.2.0 для фиксации версии
+  docker run -d -p 8080:8000 -v mini-tms-data:/data -e TMS_SECRET_KEY=… ghcr.io/dolmetscher/mini-tms:latest
+  ```
+  Пулл анонимный (образ публичный), Portainer/ compose-стек — как в разделе 4,
+  но вместо `build:` просто `image: ghcr.io/dolmetscher/mini-tms:latest`.
+- **desktop-builds** — Windows `.msi`/`-setup.exe`, macOS universal `.dmg`,
+  Linux `.AppImage`/`.deb`; артефакты в прогоне, при теге — в Releases.
+- **android-apk** — APK (debug-подпись); артефакт прогона и Releases.
+
+Обновить все сборки разом: `git tag v0.2.x && git push origin main --tags`.
+Ручной запуск без тега — вкладка Actions → нужный workflow → Run workflow
+(бандлы тогда только в артефактах прогона, без Releases).
 
 ## API (сокращенно; полный список — Swagger)
 
