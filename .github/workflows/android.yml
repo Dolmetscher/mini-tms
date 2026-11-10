@@ -1,0 +1,63 @@
+name: android-apk
+
+# Сборка Android APK (debug-подпись — ставится на любое устройство).
+# Запуск: вручную (Actions → Run workflow) или пушем тега v* — APK
+# прикладывается к GitHub Release тега и появляется в артефактах прогона.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install mobile deps
+        working-directory: mobile
+        run: npm install --no-fund --no-audit
+
+      - name: Expo prebuild (android)
+        working-directory: mobile
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build debug APK
+        working-directory: mobile/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: |
+          v=$(node -p "require('./mobile/app.json').expo.version")
+          cp mobile/android/app/build/outputs/apk/debug/app-debug.apk \
+            "Mini-TMS-CAT_${v}_android.apk"
+          ls -la Mini-TMS-CAT_*.apk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini-tms-android-apk
+          if-no-files-found: error
+          path: Mini-TMS-CAT_*_android.apk
+
+      - name: Attach to release (tags)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "Mini-TMS CAT ${{ github.ref_name }}" --generate-notes || true
+          gh release upload "${{ github.ref_name }}" Mini-TMS-CAT_*_android.apk --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
