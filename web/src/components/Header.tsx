@@ -71,6 +71,7 @@ export default function Header() {
       )}
       <span className={`role-badge role-${activeOrg?.role}`}>{activeOrg?.role}</span>
       <span className="muted">{user?.username}</span>
+      <a className="btn small" href="/manual.html" target="_blank" rel="noreferrer" title="Справочный портал (руководство пользователя)">Справка</a>
       <button className="btn small" title="Сменить свой пароль" onClick={() => void changePassword()}>Пароль</button>
       <button className="btn small" onClick={logout}>Выйти</button>
     </header>

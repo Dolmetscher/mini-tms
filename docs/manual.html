@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini-TMS CAT — Справочный портал</title>
+<meta name="description" content="Руководство пользователя Mini-TMS CAT: быстрый старт, полный цикл работы, роли, QA, биллинг, администрирование.">
+<style>
+:root{
+  --bg:#f4f6f9; --paper:#ffffff; --ink:#1b2432; --muted:#5c6675;
+  --line:#e2e7ee; --accent:#0b5fd0; --accent-dark:#0948a0;
+  --side-bg:#141c28; --side-ink:#c7d1e0; --side-active:#ffffff;
+  --code-bg:#0f1720; --code-ink:#dbe4f0;
+  --ok:#0d7a43; --warn:#9a6700; --bad:#b02a37;
+  --radius:10px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.65 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* ---------- верхняя панель ---------- */
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;z-index:50;
+  background:var(--side-bg);color:#fff;display:flex;align-items:center;gap:14px;padding:0 18px;}
+.topbar .brand{color:#fff;font-weight:700;font-size:17px;letter-spacing:.2px;text-decoration:none}
+.topbar .brand:hover{text-decoration:none;color:#9ec2ff}
+.topbar .ver{font-size:12.5px;color:#8fa1b8}
+.topbar .spacer{flex:1}
+.topbar a.gh{color:#c7d1e0;font-size:13.5px}
+.topbar a.gh:hover{color:#fff;text-decoration:none}
+#burger{display:none;background:none;border:1px solid #3a4759;border-radius:8px;color:#c7d1e0;
+  font-size:18px;line-height:1;padding:6px 10px;cursor:pointer}
+
+/* ---------- сайдбар ---------- */
+.sidebar{position:fixed;top:56px;bottom:0;left:0;width:300px;z-index:40;
+  background:var(--side-bg);color:var(--side-ink);overflow-y:auto;padding:14px 12px 28px;}
+.searchbox{position:relative;margin:4px 4px 14px}
+.searchbox input{width:100%;padding:9px 12px;border-radius:8px;border:1px solid #3a4759;
+  background:#1d2836;color:#e8eef6;font-size:14px;outline:none}
+.searchbox input::placeholder{color:#7f8fa3}
+.searchbox input:focus{border-color:var(--accent)}
+.results{position:absolute;top:42px;left:0;right:0;background:#ffffff;color:var(--ink);
+  border-radius:8px;box-shadow:0 10px 28px rgba(8,14,24,.35);overflow:hidden;display:none;max-height:70vh;overflow-y:auto}
+.results.show{display:block}
+.results .r{display:block;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--line);font-size:13.5px}
+.results .r:last-child{border-bottom:0}
+.results .r:hover{background:#eef4ff}
+.results .r b{display:block;color:var(--accent-dark);font-size:13.5px;margin-bottom:2px}
+.results .r mark{background:#ffe9a8;padding:0 2px;border-radius:3px}
+.results .empty{padding:12px;color:var(--muted);font-size:13.5px}
+
+.nav{padding:0 4px}
+.nav .group{margin:0 0 4px}
+.nav a{display:block;color:var(--side-ink);padding:6px 10px;border-radius:7px;font-size:14.2px;line-height:1.4}
+.nav a:hover{background:#1e2a3a;color:#fff;text-decoration:none}
+.nav a.sub{padding-left:24px;font-size:13.4px;color:#93a3b8}
+.nav a.active{background:#2456a8;color:var(--side-active)}
+.nav .sep{height:1px;background:#26334a;margin:10px 8px}
+
+/* ---------- контент ---------- */
+.content{margin:56px 0 0 300px;padding:34px 44px 90px;max-width:1060px}
+section.card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
+  padding:30px 36px;margin:0 0 26px;scroll-margin-top:72px}
+section.sub{margin-top:22px;padding-top:0;border:0;box-shadow:none;background:transparent;padding-left:26px;border-left:2px solid var(--line)}
+h1.hero{font-size:34px;line-height:1.2;margin:0 0 10px}
+.meta{color:var(--muted);font-size:14.5px;margin-bottom:22px}
+.meta a{font-weight:600}
+h2{font-size:25px;line-height:1.25;margin:0 0 14px}
+h2 .no{color:var(--accent)}
+h3{font-size:19.5px;margin:0 0 10px}
+h3 .no{color:var(--accent);font-size:16px;margin-right:6px}
+p{margin:0 0 13px}
+p:last-child{margin-bottom:0}
+ul{margin:0 0 14px;padding-left:22px}
+li{margin:0 0 8px}
+strong{color:#12203a}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  font-size:.9em;background:#eef2f7;border:1px solid #dfe6ef;border-radius:5px;padding:1px 6px;color:#12325e;white-space:nowrap}
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:8px;padding:14px 18px;
+  overflow-x:auto;margin:14px 0;font-size:13.8px;line-height:1.55}
+pre code{background:none;border:0;padding:0;color:inherit;white-space:pre}
+.note{background:#eef4ff;border-left:3px solid var(--accent);border-radius:0 8px 8px 0;
+  padding:12px 16px;margin:14px 0;color:#22314a;font-size:15px}
+.note.warn{background:#fff7e6;border-left-color:#d97706}
+
+.table-wrap{overflow-x:auto;margin:14px 0 18px;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:14.6px;background:#fff}
+th,td{padding:9px 13px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{background:#f0f4f9;color:#132238;font-size:13.6px;letter-spacing:.15px}
+tbody tr:nth-child(even){background:#fafbfd}
+tbody tr:last-child td{border-bottom:0}
+caption{caption-side:top;text-align:left;font-weight:600;color:var(--muted);font-size:13.5px;padding:0 2px 8px}
+
+kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86em;
+  background:#eef1f5;border:1px solid #c9d2de;border-bottom-width:2px;border-radius:5px;padding:1px 7px;color:#1b2a3d;white-space:nowrap}
+.badge{display:inline-block;border-radius:20px;padding:1px 10px;font-size:12.5px;font-weight:600;white-space:nowrap}
+.badge.block{background:#fde8ea;color:var(--bad)}
+.badge.warn{background:#fff3d6;color:var(--warn)}
+.badge.ok{background:#e2f5e9;color:var(--ok)}
+.qa details{border:1px solid var(--line);border-radius:8px;background:#fff;margin:0 0 10px}
+.qa summary{cursor:pointer;padding:11px 15px;font-weight:600;font-size:15px;color:#12203a;list-style:none}
+.qa summary::before{content:"+";display:inline-block;width:20px;color:var(--accent);font-weight:700}
+.qa details[open] summary::before{content:"–"}
+.qa details[open]{border-color:#c9d9f2}
+.qa details p{padding:0 15px 13px 37px;color:#2a3850;margin:0}
+.hero-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:20px 0 4px}
+.hero-cards a{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:#fbfcfe;color:var(--ink)}
+.hero-cards a:hover{border-color:var(--accent);text-decoration:none;background:#f4f8ff}
+.hero-cards .t{font-weight:700;color:var(--accent-dark);margin-bottom:4px;font-size:15px}
+.hero-cards .d{font-size:13.5px;color:var(--muted)}
+footer.docs{margin-left:300px;padding:0 44px 60px;color:var(--muted);font-size:13.5px;max-width:1060px}
+#up{position:fixed;right:22px;bottom:22px;z-index:45;width:42px;height:42px;border-radius:50%;
+  border:1px solid var(--line);background:#fff;color:var(--accent);font-size:19px;cursor:pointer;
+  box-shadow:0 6px 16px rgba(15,25,40,.14);display:none}
+#up.show{display:block}
+.flash{animation:flash 1.6s ease-out}
+@keyframes flash{0%{background:#fff3c9}100%{background:var(--paper)}}
+section.sub.flash{animation:none}
+
+/* ---------- адаптив и печать ---------- */
+@media (max-width:1000px){
+  #burger{display:block}
+  .sidebar{transform:translateX(-105%);transition:transform .2s ease;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  .sidebar.open{transform:none}
+  .content,footer.docs{margin-left:0;padding-left:18px;padding-right:18px}
+}
+@media print{
+  .topbar,.sidebar,#up,.results{display:none!important}
+  .content,footer.docs{margin:0;max-width:none;padding:0}
+  section.card{border:0;page-break-inside:avoid}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <button id="burger" aria-label="Меню">☰</button>
+  <a class="brand" href="#top">Mini&#8209;TMS CAT</a>
+  <span class="ver">справочный портал · v0.2.0</span>
+  <span class="spacer"></span>
+  <a class="gh" href="https://github.com/Dolmetscher/mini-tms" target="_blank" rel="noreferrer">GitHub ↗</a>
+</header>
+
+<aside class="sidebar" id="sidebar">
+  <div class="searchbox">
+    <input id="search" type="search" placeholder="Поиск по руководству…" autocomplete="off">
+    <div class="results" id="results"></div>
+  </div>
+  <nav class="nav" id="nav">
+    <div class="group">
+      <a href="#ch1" data-t="1. О системе">1. О системе</a>
+      <a href="#ch1-1" class="sub" data-t="1.1. Клиенты">1.1. Клиенты</a>
+      <a href="#ch1-2" class="sub" data-t="1.2. Интерфейс">1.2. Интерфейс</a>
+    </div>
+    <div class="sep"></div>
+    <div class="group">
+      <a href="#ch2" data-t="2. Быстрый старт (15 минут)">2. Быстрый старт</a>
+      <a href="#ch2-1" class="sub" data-t="2.1. Запуск сервера (Docker)">2.1. Запуск сервера (Docker)</a>
+      <a href="#ch2-2" class="sub" data-t="2.2. Первый вход и смена пароля">2.2. Первый вход и смена пароля</a>
+      <a href="#ch2-3" class="sub" data-t="2.3. Первый перевод (на демо-проекте)">2.3. Первый перевод</a>
+    </div>
+    <div class="sep"></div>
+    <div class="group">
+      <a href="#ch3" data-t="3. Роли и права">3. Роли и права</a>
+    </div>
+    <div class="sep"></div>
+    <div class="group">
+      <a href="#ch4" data-t="4. Полный цикл работы над проектом">4. Полный цикл работы</a>
+      <a href="#ch4-1" class="sub" data-t="4.1. Ресурсы: TM и TB">4.1. Ресурсы: TM и TB</a>
+      <a href="#ch4-2" class="sub" data-t="4.2. Машинный перевод (MT)">4.2. Машинный перевод</a>
+      <a href="#ch4-3" class="sub" data-t="4.3. Создание проекта и загрузка файлов">4.3. Проект и файлы</a>
+      <a href="#ch4-4" class="sub" data-t="4.4. Анализ объема и пред-перевод">4.4. Анализ и пред-перевод</a>
+      <a href="#ch4-5" class="sub" data-t="4.5. Назначение задания и жизненный цикл">4.5. Жизненный цикл</a>
+      <a href="#ch4-6" class="sub" data-t="4.6. Работа в редакторе">4.6. Работа в редакторе</a>
+      <a href="#ch4-7" class="sub" data-t="4.7. Контроль качества (QA)">4.7. Контроль качества (QA)</a>
+      <a href="#ch4-8" class="sub" data-t="4.8. Обмен с внешними CAT (XLIFF-хендофф)">4.8. XLIFF-хендофф</a>
+      <a href="#ch4-9" class="sub" data-t="4.9. Ревью и LQA-оценка">4.9. Ревью и LQA</a>
+      <a href="#ch4-10" class="sub" data-t="4.10. Приемка, выгрузка и доставка">4.10. Приемка и доставка</a>
+    </div>
+    <div class="sep"></div>
+    <div class="group">
+      <a href="#ch5" data-t="5. Уведомления, комментарии и обратная связь">5. Уведомления и обратная связь</a>
+      <a href="#ch5-1" class="sub" data-t="5.1. Центр уведомлений">5.1. Центр уведомлений</a>
+      <a href="#ch5-2" class="sub" data-t="5.2. E-mail и Telegram">5.2. E-mail и Telegram</a>
+      <a href="#ch5-3" class="sub" data-t="5.3. Кнопка «Обратная связь»">5.3. Обратная связь</a>
+    </div>
+    <div class="sep"></div>
+    <div class="group">
+      <a href="#ch6" data-t="6. Биллинг, котировки и отчеты">6. Биллинг и отчеты</a>
+      <a href="#ch7" data-t="7. Клиенты: веб, десктоп, Android">7. Клиенты</a>
+      <a href="#ch7-1" class="sub" data-t="7.1. Веб-браузер">7.1. Веб-браузер</a>
+      <a href="#ch7-2" class="sub" data-t="7.2. Десктоп (Windows, macOS, Linux)">7.2. Десктоп</a>
+      <a href="#ch7-3" class="sub" data-t="7.3. Android">7.3. Android</a>
+    </div>
+    <div class="sep"></div>
+    <div class="group">
+      <a href="#ch8" data-t="8. Установка и администрирование">8. Установка и администрирование</a>
+      <a href="#ch8-1" class="sub" data-t="8.1. Установка на сервер (Docker)">8.1. Установка (Docker)</a>
+      <a href="#ch8-2" class="sub" data-t="8.2. Обновление">8.2. Обновление</a>
+      <a href="#ch8-3" class="sub" data-t="8.3. Резервное копирование">8.3. Резервное копирование</a>
+      <a href="#ch8-4" class="sub" data-t="8.4. HTTPS">8.4. HTTPS</a>
+      <a href="#ch8-5" class="sub" data-t="8.5. Переменные окружения">8.5. Переменные окружения</a>
+      <a href="#ch8-6" class="sub" data-t="8.6. Безопасность">8.6. Безопасность</a>
+    </div>
+    <div class="sep"></div>
+    <div class="group">
+      <a href="#ch9" data-t="9. Частые вопросы и неполадки">9. Частые вопросы</a>
+      <a href="#ch10" data-t="10. Глоссарий">10. Глоссарий</a>
+      <a href="#appA" data-t="Приложение A. Форматы файлов">Приложение A. Форматы</a>
+    </div>
+  </nav>
+</aside>
+
+<main class="content" id="top">
+  <section class="card" id="hero" data-title="Mini-TMS CAT — Руководство пользователя">
+    <h1 class="hero">Mini&#8209;TMS CAT — Руководство пользователя</h1>
+    <p class="meta">Версия 0.2.0 · 11 ноября 2026 · <a href="https://github.com/Dolmetscher/mini-tms" target="_blank" rel="noreferrer">Dolmetscher/mini-tms</a></p>
+    <p>Mini&#8209;TMS — компактная CAT/TMS&#8209;система для управления переводческими проектами: CAT (Computer&#8209;Assisted Translation) означает, что переводчик работает в редакторе с памятью переводов, терминологией и машинным переводом, а TMS (Translation Management System) — что вокруг перевода выстроен полный управленческий цикл: проекты, задания, статусы, контроль качества, уведомления, котировки и приемка. Система рассчитана на малые команды и индивидуальных менеджеров переводческих процессов.</p>
+    <p><strong>Основные возможности:</strong> организации с полной изоляцией данных; проекты и задания с жизненным циклом от назначения до приемки; память переводов (TM) с точным и нечетким поиском, конкордансом и автопропагацией повторов; терминологические базы (TB) со статусами терминов; машинный перевод (MT) по желанию; контроль качества (QA) со стандартными и регулярными проверками; пред&#8209;перевод и анализ объема; двуязычная выгрузка для ревью; LQA&#8209;оценка качества; уведомления по e&#8209;mail и Telegram; биллинг с котировками и инвойсами.</p>
+    <div class="hero-cards">
+      <a href="#ch2"><div class="t">Быстрый старт за 15 минут</div><div class="d">Docker, первый вход, демо-проект и полный цикл перевода</div></a>
+      <a href="#ch4"><div class="t">Полный цикл работы</div><div class="d">Ресурсы → проект → анализ → перевод → QA → приемка</div></a>
+      <a href="#ch9"><div class="t">Частые вопросы</div><div class="d">Сдача не проходит, локи, конфликты версий, MT</div></a>
+      <a href="#ch8"><div class="t">Администрирование</div><div class="d">Установка, обновление, бэкапы, HTTPS, переменные</div></a>
+    </div>
+  </section>
+  <section class="card" id="ch1" data-title="1. О системе Mini-TMS">
+    <h2><span class="no">1.</span> О системе Mini&#8209;TMS</h2>
+    <p>Mini&#8209;TMS — компактная CAT/TMS&#8209;система для управления переводческими проектами: CAT (Computer&#8209;Assisted Translation) означает, что переводчик работает в редакторе с памятью переводов, терминологией и машинным переводом, а TMS (Translation Management System) — что вокруг перевода выстроен полный управленческий цикл: проекты, задания, статусы, контроль качества, уведомления, котировки и приемка. Система рассчитана на малые команды и индивидуальных менеджеров переводческих процессов.</p>
+    <p>Основные возможности: организации с полной изоляцией данных; проекты и задания с жизненным циклом от назначения до приемки; память переводов (TM) с точным и нечетким поиском, конкордансом и автопропагацией повторов; терминологические базы (TB) со статусами терминов; машинный перевод (MT) по желанию; контроль качества (QA) со стандартными и регулярными проверками; пред&#8209;перевод и анализ объема; двуязычная выгрузка для ревью; LQA&#8209;оценка качества; уведомления по e&#8209;mail и Telegram; биллинг с котировками и инвойсами.</p>
+
+    <section class="sub" id="ch1-1" data-title="1.1. Клиенты">
+      <h3><span class="no">1.1.</span> Клиенты</h3>
+      <p>Система доступна из трех клиентов, работающих с одним сервером: веб&#8209;интерфейс (браузер, полная функциональность для менеджера и переводчика), десктопное приложение Mini&#8209;TMS CAT для Windows, macOS и Linux и мобильное приложение для Android (задания и перевод «на ходу»). Десктоп и мобильное приложение используют тот же вход по логину и паролю; адрес сервера вводится один раз на экране входа.</p>
+    </section>
+
+    <section class="sub" id="ch1-2" data-title="1.2. Интерфейс">
+      <h3><span class="no">1.2.</span> Интерфейс</h3>
+      <p>Интерфейс веб&#8209;клиента, мобильного клиента, сообщения контроля качества, письма и Telegram&#8209;уведомления, а также документы котировок и счетов — полностью на русском языке. Веб&#8209;версия раздается сервером по одному адресу: откройте <code>http://&lt;адрес-сервера&gt;:8000</code> (или порт, выбранный при установке), и вы получите и интерфейс, и API. Swagger&#8209;документация API доступна по адресу <code>/docs</code>.</p>
+      <div class="note">Дальше по тексту «pm» означает менеджера проектов (project manager), «администратор» — владельца организации, «переводчик» — исполнителя задания. Управляющие кнопки интерфейса приведены в кавычках так, как они называются на экране.</div>
+    </section>
+  </section>
+
+  <section class="card" id="ch2" data-title="2. Быстрый старт (15 минут)">
+    <h2><span class="no">2.</span> Быстрый старт (15 минут)</h2>
+
+    <section class="sub" id="ch2-1" data-title="2.1. Запуск сервера (Docker)">
+      <h3><span class="no">2.1.</span> Запуск сервера (Docker)</h3>
+      <p>Самый быстрый путь — Docker: сервер собирается и стартует четырьмя командами. Контейнер содержит и FastAPI&#8209;бэкенд, и собранный веб&#8209;интерфейс; база SQLite и загруженные файлы живут в томе <code>mini-tms-data</code> и переживают пересоздание контейнера.</p>
+<pre><code>git clone https://github.com/Dolmetscher/mini-tms.git &amp;&amp; cd mini-tms
+cp .env.example .env    # впишите TMS_SECRET_KEY — длинную случайную строку
+docker compose up -d --build</code></pre>
+      <p>Через минуту&#8209;две сервис готов: откройте <code>http://&lt;адрес-сервера&gt;:8080</code>. В Portainer то же самое делается без консоли: Stacks → Add stack → вставить <code>docker-compose.yml</code> → в Environment добавить <code>TMS_SECRET_KEY</code> → Deploy the stack. Подробности установки, HTTPS и бэкапов — в <a href="#ch8">главе 8</a>.</p>
+    </section>
+
+    <section class="sub" id="ch2-2" data-title="2.2. Первый вход и смена пароля">
+      <h3><span class="no">2.2.</span> Первый вход и смена пароля</h3>
+      <p>При первом запуске сервер создает базу и демонстрационные данные: организацию Demo Org с пользователями <code>admin/admin123</code> (администратор), <code>pm/pm123</code> (менеджер), <code>ann/ann123</code> и <code>ivan/ivan123</code> (переводчики); память переводов «Demo TM» (en→ru), базу терминов «Demo TB», прайс&#8209;лист «Standard EN→RU» и проект Marketing Brochure с документом и заданием, назначенным переводчику ann.</p>
+      <p>Войдите как <code>admin/admin123</code>, выберите организацию Demo Org — и сразу смените пароль кнопкой «Пароль» в шапке: смена пароля немедленно отзывает все ранее выданные токены, включая чужие сессии с этим логином. Затем смените пароли остальных демо&#8209;пользователей, если оставляете их для знакомства.</p>
+    </section>
+
+    <section class="sub" id="ch2-3" data-title="2.3. Первый перевод (на демо-проекте)">
+      <h3><span class="no">2.3.</span> Первый перевод (на демо&#8209;проекте)</h3>
+      <p>Задание уже назначено, поэтому достаточно войти переводчиком <code>ann/ann123</code> — и потренироваться на реальном цикле:</p>
+      <ol>
+        <li>Войдите как <code>ann/ann123</code>, выберите Demo Org.</li>
+        <li>Откройте список заданий: Задания → задание проекта Marketing Brochure (статус «назначено»).</li>
+        <li>Нажмите «Принять» (Accept) — задание перейдет в «принято», и откроется редактор.</li>
+        <li>В редакторе переводите сегменты сверху вниз: подсказки TM и термины подставляются автоматически при выборе сегмента.</li>
+        <li>Переведенный сегмент подтверждайте <kbd>Ctrl</kbd>+<kbd>Enter</kbd> — подтверждение записывает перевод в TM и автоматически подставляет его в повторы.</li>
+        <li>Кнопкой «Get MT» при необходимости запросите машинный перевод и, если он пригоден, вставьте в поле перевода.</li>
+        <li>Когда все сегменты переведены и подтверждены, откройте QA (вкладка/кнопка качества): список замечаний с переходом к проблемному сегменту.</li>
+        <li>Исправьте блокирующие замечания (обычно это непереведенные или неподтвержденные сегменты и ошибки тегов).</li>
+        <li>Нажмите «Сдать задание» (Submit): задание уйдет в статус «сдано», менеджер получит уведомление.</li>
+        <li>Войдите теперь <code>pm/pm123</code> — на дашборде проекта скачайте перевод (Export) или двуязычный DOCX для ревью, затем «Complete» для завершения.</li>
+      </ol>
+      <p>Это весь цикл. Ниже каждая фаза разобрана подробно — от подготовки ресурсов до приемки и инвойсинга.</p>
+    </section>
+  </section>
+
+  <section class="card" id="ch3" data-title="3. Роли и права">
+    <h2><span class="no">3.</span> Роли и права</h2>
+    <p>Роль задается на уровне организации: один пользователь может состоять в нескольких организациях с разными ролями. Права проверяются на сервере: каждый запрос несет заголовок <code>X-Org-Id</code>, и все выборки фильтруются по организации — данные разных организаций друг для друга невидимы.</p>
+    <div class="table-wrap">
+    <table>
+      <caption>Таблица 1. Кто что может делать</caption>
+      <thead><tr><th>Возможность</th><th>Администратор</th><th>Менеджер</th><th>Переводчик</th></tr></thead>
+      <tbody>
+        <tr><td>Организации, участники, роли, политика MT</td><td>Да</td><td>—</td><td>—</td></tr>
+        <tr><td>Проекты, документы, подключение TM/TB</td><td>Да</td><td>Да</td><td>—</td></tr>
+        <tr><td>TM/TB: создание, импорт (TMX/TBX/CSV), правка, удаление записей</td><td>Да</td><td>Да</td><td>—</td></tr>
+        <tr><td>Назначение, возврат, завершение, отмена заданий</td><td>Да</td><td>Да</td><td>—</td></tr>
+        <tr><td>Перевод сегментов, комментарии в редакторе</td><td>—</td><td>—</td><td>Да (исполнитель)</td></tr>
+        <tr><td>Сдача задания (при 0 блокирующих QA)</td><td>—</td><td>—</td><td>Да (исполнитель)</td></tr>
+        <tr><td>QA&#8209;отчет задания, история правок сегмента</td><td>Участники задания</td><td>Участники задания</td><td>Участники задания</td></tr>
+        <tr><td>LQA: разметка ошибок</td><td>Участники</td><td>Участники</td><td>Участники (задания)</td></tr>
+        <tr><td>LQA: добавление/удаление ошибок</td><td>Да</td><td>Да</td><td>—</td></tr>
+        <tr><td>RX&#8209;правила QA (создание, вкл/выкл)</td><td>Да</td><td>Да</td><td>—</td></tr>
+        <tr><td>Прайс&#8209;листы, котировки, экспорт DOCX</td><td>Да</td><td>Да</td><td>—</td></tr>
+        <tr><td>Доставка проекта (ZIP), инвойс DOCX</td><td>Да</td><td>Да</td><td>—</td></tr>
+        <tr><td>Отчет продуктивности, бэкап организации</td><td>Да</td><td>Да</td><td>—</td></tr>
+        <tr><td>Лента обратной связи (GET /api/feedback)</td><td>Да</td><td>Да</td><td>— (только отправка)</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>Переводчик видит только свои задания; менеджер и администратор — все задания организации. «Участники задания» — это исполнитель и менеджерская сторона, вовлеченная в конкретное задание.</p>
+  </section>
+
+  <section class="card" id="ch4" data-title="4. Полный цикл работы над проектом">
+    <h2><span class="no">4.</span> Полный цикл работы над проектом</h2>
+    <p>Глава описывает «взрослый» сценарий: подготовить ресурсы, создать проект, проанализировать и назначить, довести перевод до сдачи, проверить, принять и выдать результат заказчику. Порядок подразделов совпадает с реальной последовательностью действий.</p>
+
+    <section class="sub" id="ch4-1" data-title="4.1. Ресурсы: память переводов (TM) и терминология (TB)">
+      <h3><span class="no">4.1.</span> Ресурсы: память переводов (TM) и терминология (TB)</h3>
+      <p>Память переводов хранит пары «исходник → перевод» и подсказывает их в редакторе; терминологическая база — глоссарий с обязательными и запрещенными терминами. Ресурсы создаются на уровне организации (раздел TM / TB), и к проекту подключаются нужные — с проверкой совместимости языков.</p>
+      <ul>
+        <li><strong>Импорт TM:</strong> форматы TMX и CSV (заголовок <code>source,target</code>; семантика upsert — существующие пары обновляются, новые добавляются). Экспорт — TMX 1.4b и CSV, кругооборот без потерь.</li>
+        <li><strong>Импорт TB:</strong> TBX и CSV (<code>term,translation,note,status</code>). Экспорт — CSV и TBX&#8209;Basic. У термина есть статус: <code>preferred</code> (предпочтителен), <code>admitted</code> (допустим), <code>forbidden</code> (запрещен).</li>
+        <li>При подключении TM к проекту задаются флаги <code>search</code> (искать совпадения) и <code>write</code> (записывать подтвержденные переводы). Право записи — осознанное решение: корпоративная память пополняется только качеством.</li>
+        <li>Записи листаются постранично с кнопкой «Load more», поиск — по обеим сторонам пары. Устаревшие записи можно поправить (перевод) или удалить — исходник в TM не меняется, он ключ памяти.</li>
+      </ul>
+      <p>Отдельная кнопка «Align files…» на странице TM запускает выравнивание: пара «старый исходник + старый перевод» (txt или docx) сопоставляется по якорям — числам и именам собственным — и предлагает кандидатов пар. Человек подтверждает пары галочками, и они попадают в TM (upsert). Так старые переводы, сделанные до внедрения системы, превращаются в рабочую память.</p>
+    </section>
+
+    <section class="sub" id="ch4-2" data-title="4.2. Машинный перевод (MT)">
+      <h3><span class="no">4.2.</span> Машинный перевод (MT)</h3>
+      <p>MT — это подсказка, а не замена переводчика: кнопка «Get MT» в редакторе запрашивает перевод текущего сегмента, результат помечается провайдером и вставляется только явным действием пользователя — введенный текст не перетирается. Провайдеры: LibreTranslate (адрес и ключ задаются переменными <code>TMS_MT_URL</code> и <code>TMS_MT_API_KEY</code>) и mock для тестов; по умолчанию MT отключен. Организация может запретить MT политикой <code>org.mt_allowed</code>, проект — флагом MT в настройках. Если внешняя служба недоступна, редактор продолжает работать — просто без подсказки.</p>
+    </section>
+
+    <section class="sub" id="ch4-3" data-title="4.3. Создание проекта и загрузка файлов">
+      <h3><span class="no">4.3.</span> Создание проекта и загрузка файлов</h3>
+      <p>Проект создает pm или администратор: языковая пара (на каждый целевой язык создается отдельное задание), дедлайн, инструкции для переводчиков, файлы. Поддерживаемые исходные форматы: TXT, XLIFF 1.2, XLIFF 2.0, DOCX; версия XLIFF определяется автоматически, и экспорт вернется в версии исходника. К проекту подключаются TM и TB с нужными флагами, MT включается или выключается. Загруженные документы обрабатываются асинхронно: большой файл не блокирует интерфейс, статус обработки виден в карточке документа.</p>
+      <p>Если в XLIFF уже есть переводы (файл из другого CAT&#8209;инструмента), они импортируются черновиками — по state сегмента; подтверждение остается за переводчиком. Inline&#8209;разметка (теги) сохраняется и при импорте, и при экспорте: пары <code>ph/pc</code>, <code>sc/ec</code> в 2.0 и <code>bpt/ept/x</code> в 1.2 нормализуются в единый профиль тегов редактора и восстанавливаются при выгрузке.</p>
+    </section>
+
+    <section class="sub" id="ch4-4" data-title="4.4. Анализ объема и пред-перевод">
+      <h3><span class="no">4.4.</span> Анализ объема и пред&#8209;перевод</h3>
+      <p>До старта перевода выполните анализ (Analysis в карточке задания): каждая категория — exact (точные совпадения с TM), fuzzy&#8209;банды (нечеткие совпадения по процентам), повторы и новые сегменты — считает слова; взвешенная сумма (веса настраиваются переменными <code>TMS_ANALYSIS_*</code>) и есть объем работ. Котировка строится из анализа по прайс&#8209;листу — см. <a href="#ch6">главу 6</a>.</p>
+      <p>Pre&#8209;translate подставит из TM точные совпадения (режим exact) или точные плюс нечеткие (exact+fuzzy) и распространит переводы на повторы. Все подстановки — черновики без подтверждения: вычитка обязательна. Тот же принцип у автопропагации: подтверждаете сегмент — идентичные сегменты получают черновик с тем же переводом.</p>
+      <p>Для проверки всей цепочки до старта перевода полезен псевдо&#8209;перевод (Pseudo&#8209;fill в редакторе): сегменты заполняются синтетикой (диакритика, удлинение ~40%, маркерные скобки), теги, числа и плейсхолдеры сохраняются. Экспорт и QA на таком тексте проверяют пайплайн — теги, числа, верстку длинных строк — не переводя ни слова. По умолчанию заполняются только пустые сегменты; режим Overwrite прогоняет и непустые.</p>
+    </section>
+
+    <section class="sub" id="ch4-5" data-title="4.5. Назначение задания и жизненный цикл">
+      <h3><span class="no">4.5.</span> Назначение задания и жизненный цикл</h3>
+      <p>Задание назначается конкретному участнику с индивидуальным дедлайном; переводчик принимает его (Accept) или отклоняет с причиной (Decline). Повторное назначение сохраняет уже сделанный перевод. Жизненный цикл — конечный автомат на сервере: недопустимые переходы отклоняются.</p>
+      <div class="table-wrap">
+      <table>
+        <caption>Таблица 2. Статусы задания</caption>
+        <thead><tr><th>Статус</th><th>Что означает</th><th>Что дальше</th></tr></thead>
+        <tbody>
+          <tr><td><code>unassigned</code></td><td>Создано, исполнитель не выбран</td><td>pm: Assign</td></tr>
+          <tr><td><code>assigned</code></td><td>Назначено, ждет реакции исполнителя</td><td>переводчик: Accept или Decline</td></tr>
+          <tr><td><code>accepted</code></td><td>Принято к работе</td><td>первое редактирование → in_progress</td></tr>
+          <tr><td><code>in_progress</code></td><td>Ведется перевод</td><td>переводчик: Submit</td></tr>
+          <tr><td><code>submitted</code></td><td>Сдано, на проверке у pm</td><td>pm: Complete или Return</td></tr>
+          <tr><td><code>rework</code></td><td>Возвращено с комментарием</td><td>переводчик дорабатывает, снова Submit</td></tr>
+          <tr><td><code>completed</code></td><td>Принято, цикл закрыт</td><td>экспорт и доставка (гл. <a href="#ch4-10">4.10</a>)</td></tr>
+          <tr><td><code>canceled</code></td><td>Отменено, редактирование закрыто</td><td>—</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p>Просрочка — не статус, а вычисляемый признак: дедлайн прошел, а задание не сдано. Прогресс считается по подтвержденным обязательным сегментам от всех обязательных и показан в списке заданий и на дашборде; 100% прогресса не заменяет действия «Сдать задание». Напоминания о дедлайне приходят автоматически за 24 часа и за 2 часа.</p>
+    </section>
+
+    <section class="sub" id="ch4-6" data-title="4.6. Работа в редакторе">
+      <h3><span class="no">4.6.</span> Работа в редакторе</h3>
+      <p>Редактор — центральное рабочее место переводчика. Слева список сегментов с исходником и переводом, бейджами статусов, комментариев 💬 и занятости 🔒; справа — панель контекста: подсказки TM, термины, MT, история правок и комментарии. Выбор сегмента автоматически ищет совпадения в подключенных TM: точное показывает 100%, нечеткое — процент, исходник, перевод и имя памяти; вставка — одним кликом. Термины TB находятся в исходнике активного сегмента, подсвечиваются прямо в тексте, а подсказка с переводом всплывает по термину; конкордансный поиск («как это переводилось раньше») ищет по слову или фразе в обеих сторонах памяти.</p>
+      <div class="table-wrap">
+      <table>
+        <caption>Таблица 3. Горячие клавиши редактора</caption>
+        <thead><tr><th>Клавиши</th><th>Действие</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Подтвердить сегмент и перейти к следующему неподтвержденному</td></tr>
+          <tr><td><kbd>Ctrl</kbd>/<kbd>Alt</kbd> + <kbd>↑</kbd> <kbd>↓</kbd></td><td>Навигация по сегментам (следующий/предыдущий)</td></tr>
+          <tr><td><kbd>Alt</kbd>+<kbd>T</kbd></td><td>Скопировать исходник в поле перевода</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Сохранить черновик немедленно</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>H</kbd></td><td>Найти и заменить по всем сегментам задания</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p>Хоткеи работают при фокусе в любом месте страницы, а не только в поле перевода. Фильтры списка сегментов: все, непереведенные, неподтвержденные, QA&#8209;проблемы. Правка подтвержденного сегмента автоматически снимает подтверждение — статус не «залипает». Индикатор сохранения в шапке редактора показывает «Saved» / «Saving» / «No connection» / «Error»; конфликт версий (кто&#8209;то сохранил сегмент раньше, 409) предлагается решить диалогом «Keep server» (взять серверную версию) или «Overwrite with mine» (перезаписать своей).</p>
+      <p>Занятость сегментов: открыв сегмент, редактор держит мягкий лок с TTL 10 минут и продлевает его активностью; остальные участники видят бейдж 🔒 с именем владельца и поле только для чтения, а сервер на всякий случай отвечает 423 на чужое сохранение. Умершая вкладка освободит сегмент через TTL, менеджмент может снять лок принудительно. Комментарии к сегменту — диалог переводчик ↔ менеджер в контексте строки: новый комментарий виден обоим мгновенно. История правок (панель History) хранит каждую версию перевода с автором и временем, включая пред&#8209;перевод и автопропагацию; старую версию можно вернуть в черновик.</p>
+    </section>
+
+    <section class="sub" id="ch4-7" data-title="4.7. Контроль качества (QA)">
+      <h3><span class="no">4.7.</span> Контроль качества (QA)</h3>
+      <p>QA прогоняется по кнопке качества в задании: список замечаний с кодом, текстом и переходом к сегменту; сдача возможна только при нулевом количестве блокирующих. Предупреждения не блокируют, но их стоит вычитать — это стандартные практики CAT.</p>
+      <div class="table-wrap">
+      <table>
+        <caption>Таблица 4. Проверки QA</caption>
+        <thead><tr><th>Проверка</th><th>Серьёзность</th></tr></thead>
+        <tbody>
+          <tr><td>Отсутствует перевод в обязательном сегменте</td><td><span class="badge block">Блокирует сдачу</span></td></tr>
+          <tr><td>Неподтвержденные обязательные сегменты</td><td><span class="badge block">Блокирует сдачу</span></td></tr>
+          <tr><td>Нарушение структуры тегов</td><td><span class="badge block">Блокирует сдачу</span></td></tr>
+          <tr><td>Числа не совпадают с исходником</td><td><span class="badge warn">Предупреждение</span></td></tr>
+          <tr><td>Несоблюдение терминологии; запрещенный термин</td><td><span class="badge warn">Предупреждение</span></td></tr>
+          <tr><td>Двойные и краевые пробелы</td><td><span class="badge warn">Предупреждение</span></td></tr>
+          <tr><td>Повтор слова в переводе</td><td><span class="badge warn">Предупреждение</span></td></tr>
+          <tr><td>Дисбаланс скобок и кавычек</td><td><span class="badge warn">Предупреждение</span></td></tr>
+          <tr><td>Конечная пунктуация отличается</td><td><span class="badge warn">Предупреждение</span></td></tr>
+          <tr><td>Совпадение с исходником при разных языках</td><td><span class="badge warn">Предупреждение</span></td></tr>
+          <tr><td>Плейсхолдеры (<code>%s</code>, <code>%d</code>, <code>%1$s</code>, <code>{0}</code>, Qt <code>%1</code>)</td><td><span class="badge warn">Предупреждение</span></td></tr>
+          <tr><td>Аномальное соотношение длины перевод/исходник</td><td><span class="badge warn">Предупреждение</span></td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p>Поверх стандартных — RX&#8209;правила организации (вкладка QA Rules): регулярное выражение «не должен / должен встречаться» в исходнике или переводе, серьёзность warning или error (error блокирует сдачу), регистр — опционально. Паттерн проверяется при создании (невалидный не сохранится), а перед сохранением его можно прогнать по образцу текста кнопкой «Test pattern». Типовые правила: запрет заглушек TODO, двойных пробелов, латиницы в кириллическом переводе; обязательность типографских кавычек «…». Нарушение правила попадает в QA&#8209;отчет с кодом <code>regex_rule</code> и переходом к сегменту.</p>
+    </section>
+
+    <section class="sub" id="ch4-8" data-title="4.8. Обмен с внешними CAT-инструментами (XLIFF-хендофф)">
+      <h3><span class="no">4.8.</span> Обмен с внешними CAT&#8209;инструментами (XLIFF&#8209;хендофф)</h3>
+      <p>Если исполнитель привык работать в Trados, memoQ или OmegaT — задание выгружается кнопкой «XLIFF handoff»: XLIFF 1.2 с исходником, текущим переводом и state; inline&#8209;теги становятся родными для внешнего инструмента. Готовый файл возвращается кнопкой «Import XLIFF»: сегменты сопоставляются по id (фолбэк — по тексту исходника), строки с state <code>translated</code>, <code>signed-off</code>, <code>final</code> или <code>approved</code> подтверждаются как ручной Confirm — с записью в TM и автопропагацией, — прочие становятся черновиками. Чужие свежие локи сегментов уважаются (такие строки пропускаются), история правок фиксирует импорт.</p>
+    </section>
+
+    <section class="sub" id="ch4-9" data-title="4.9. Ревью и LQA-оценка качества">
+      <h3><span class="no">4.9.</span> Ревью и LQA&#8209;оценка качества</h3>
+      <p>Для вычитки на сторону выгружается двуязычный DOCX (№ / исходник / перевод) — комфортный формат для корректора или заказчика. Оценка качества — LQA в духе MQM: pm размечает ошибки по категориям (accuracy — точность, terminology — терминология, fluency — плавность, style — стиль, locale — локальные нормы, consistency — согласованность) и серьёзности: minor 1 балл, major 5, critical 10. Итог: <code>score = 100 − штраф×1000/слов</code> с порогом зачета (по умолчанию 95, настраивается). Оценка и число ошибок прикладываются к возврату задания — переводчик видит, за что его вернули.</p>
+    </section>
+
+    <section class="sub" id="ch4-10" data-title="4.10. Приемка, выгрузка и доставка">
+      <h3><span class="no">4.10.</span> Приемка, выгрузка и доставка</h3>
+      <p>Приняв задание (Complete), pm закрывает цикл: сданный перевод скачивается экспортом в формате исходника (структура документа и теги сохранены, проставляется state переведенных сегментов). Дальше работают агрегированные инструменты: пакет доставки проекта — все сданные целевые файлы одним ZIP с манифестом (кнопка Delivery на дашборде проекта) и инвойс DOCX с детерминированным номером <code>INV-&lt;проект&gt;-&lt;дата&gt;</code> — закрывающий документ для заказчика; математика та же, что в котировке, но только по заданиям в submitted/completed.</p>
+    </section>
+  </section>
+
+  <section class="card" id="ch5" data-title="5. Уведомления, комментарии и обратная связь">
+    <h2><span class="no">5.</span> Уведомления, комментарии и обратная связь</h2>
+
+    <section class="sub" id="ch5-1" data-title="5.1. Центр уведомлений и события в реальном времени">
+      <h3><span class="no">5.1.</span> Центр уведомлений и события в реальном времени</h3>
+      <p>Все ключевые события — назначение, принятие, сдача, возврат, завершение, отмена, просрочка, комментарии к сегментам, LQA&#8209;ошибки — приходят в центр уведомлений и на WebSocket&#8209;канал: дашборды и списки обновляются без перезагрузки. Обязательные события ТЗ адресные; напоминания о дедлайне приходят за 24 часа и за 2 часа автоматически.</p>
+    </section>
+
+    <section class="sub" id="ch5-2" data-title="5.2. E-mail и Telegram (бета)">
+      <h3><span class="no">5.2.</span> E&#8209;mail и Telegram (бета)</h3>
+      <p>Действенные события дублируются во внешние каналы: e&#8209;mail через SMTP (STARTTLS) и/или Telegram&#8209;бот. Каналы включает администратор переменными <code>TMS_SMTP_*</code> и <code>TMS_TG_BOT_TOKEN</code>, а каждый пользователь сам задает себе контакты — e&#8209;mail и chat_id в форме на странице уведомлений (тот же PATCH /api/me). chat_id узнается у @userinfobot после <code>/start</code> вашему боту. Доставка — best&#8209;effort в фоне: сбой внешнего сервиса не мешает работе с заданиями.</p>
+    </section>
+
+    <section class="sub" id="ch5-3" data-title="5.3. Кнопка «Обратная связь» и автосбор ошибок">
+      <h3><span class="no">5.3.</span> Кнопка «Обратная связь» и автосбор ошибок</h3>
+      <p>Плавающая кнопка «💬 Feedback» есть на каждой странице: участник выбирает тип (баг / идея / вопрос / другое), пишет текст — сообщение сохраняется вместе с адресом страницы, на которой кнопку нажали. Лента — в UI менеджмента: страница Feedback с фильтром по типу и ссылкой на страницу отправителя. Анти&#8209;спам: не более 10 сообщений в час от одного пользователя. Дополнительно браузер сам сообщает о необработанных JS&#8209;ошибках: репорты с пометкой <code>[auto]</code> несут стек, страницу и браузер; репортер дедуплицирует повторы и замолкает, если отправка сама по себе падает — цикл обратной связи не зацикливается.</p>
+    </section>
+  </section>
+  <section class="card" id="ch6" data-title="6. Биллинг, котировки и отчеты">
+    <h2><span class="no">6.</span> Биллинг, котировки и отчеты</h2>
+    <p>Прайс&#8209;лист организации (страница Ставки) задает ставку за слово по категориям анализа — exact, fuzzy&#8209;банды, повторы, новые — валюту и минимальную сумму заказа; валюта новых прайс&#8209;листов по умолчанию — <code>TMS_RATE_CURRENCY</code>. Котировка (блок Quote в дашборде проекта и в карточке задания) умножает слова категорий на ставки: видны итоги по валютам и пары без прайс&#8209;листа (<code>missing_pairs</code>). Котировка экспортируется в DOCX — документ для заказчика с таблицей категорий, минимальной суммой и итогом.</p>
+    <p>Отчет продуктивности (страница Отчеты, фильтр по периоду) показывает по переводчикам: подтвержденные слова, задания, принятые и просроченные, среднюю LQA&#8209;оценку — данные для распределения будущих заданий. Аварийный инструмент — бэкап организации одной кнопкой: полный JSON&#8209;дамп (проекты, задания, сегменты, TM/TB, прайс&#8209;листы, LQA, комментарии; хеши паролей не выгружаются).</p>
+  </section>
+
+  <section class="card" id="ch7" data-title="7. Клиенты: веб, десктоп, Android">
+    <h2><span class="no">7.</span> Клиенты: веб, десктоп, Android</h2>
+
+    <section class="sub" id="ch7-1" data-title="7.1. Веб-браузер">
+      <h3><span class="no">7.1.</span> Веб&#8209;браузер</h3>
+      <p>Основной клиент. Сервер раздает интерфейс и API по одному адресу — просто откройте адрес сервера в браузере. Если интерфейс размещен отдельно от API, адрес сервера вводится на экране входа и хранится в localStorage: одна сборка работает с любым сервером. При локальной разработке веб&#8209;клиент стартует командой <code>npm run dev</code> на порту 5173, адрес API задается переменной <code>VITE_API_BASE</code>.</p>
+    </section>
+
+    <section class="sub" id="ch7-2" data-title="7.2. Десктоп (Windows, macOS, Linux)">
+      <h3><span class="no">7.2.</span> Десктоп (Windows, macOS, Linux)</h3>
+      <p>Установщики публикуются на странице Releases репозитория GitHub: для Windows — NSIS&#8209;установщик и <code>.msi</code> (требуется WebView2, который уже есть в Windows 10/11), для macOS — универсальный dmg (Intel и Apple Silicon), для Linux — AppImage и deb. Десктоп — это тот же веб&#8209;интерфейс в нативной рамке: адрес сервера вводится на экране входа. При первом запуске на macOS (сборка без подписи): правый клик по приложению → Open.</p>
+    </section>
+
+    <section class="sub" id="ch7-3" data-title="7.3. Android">
+      <h3><span class="no">7.3.</span> Android</h3>
+      <p>APK публикуется на странице Releases (debug&#8209;подпись — ставится на любое устройство). На экране входа укажите адрес сервера: для эмулятора это <code>10.0.2.2</code>, для телефона в той же Wi&#8209;Fi&#8209;сети — IP компьютера. Токены хранятся в SecureStore. Мобильный клиент поддерживает мультиаккаунт: список аккаунтов с переключением без пароля, выбор организации при входе, локальные данные с префиксом аккаунта; уведомление открывает задание в активном аккаунте, истечение сессии возвращает на экран входа.</p>
+      <div class="note warn">Мобильный редактор не захватывает сегментные локи (веб — захватывает): сохранение в сегмент, занятый в вебе, вернет ошибку сохранения. Индикаторы занятости с именем владельца доступны в веб&#8209;клиенте.</div>
+    </section>
+  </section>
+
+  <section class="card" id="ch8" data-title="8. Установка и администрирование">
+    <h2><span class="no">8.</span> Установка и администрирование</h2>
+
+    <section class="sub" id="ch8-1" data-title="8.1. Установка на сервер (Docker)">
+      <h3><span class="no">8.1.</span> Установка на сервер (Docker)</h3>
+      <p>Рецепт из быстрого старта подходит и для продакшена: клонировать репозиторий, задать <code>TMS_SECRET_KEY</code>, <code>docker compose up -d --build</code>; сервис слушает порт 8080 (проброс на 8000 контейнера). База SQLite и загруженные документы живут в томе <code>mini-tms-data</code> (<code>/data</code>) и переживают пересоздание контейнера. Для VPS с 1 ГБ памяти достаточно: контейнер с одним uvicorn&#8209;воркером укладывается примерно в сотню мегабайт.</p>
+      <p>Готовый образ из реестра — без сборки на сервере:</p>
+<pre><code>docker pull ghcr.io/dolmetscher/mini-tms:latest
+docker run -d -p 8080:8000 -v mini-tms-data:/data \
+  -e TMS_SECRET_KEY="длинная-случайная-строка" \
+  --name mini-tms ghcr.io/dolmetscher/mini-tms:latest</code></pre>
+    </section>
+
+    <section class="sub" id="ch8-2" data-title="8.2. Обновление">
+      <h3><span class="no">8.2.</span> Обновление</h3>
+      <p>Обновление — Repull/Redeploy стека в Portainer или <code>docker compose pull &amp;&amp; docker compose up -d</code>, если используется готовый образ реестра; данные в томе остаются. Событие обновления без даунтайма не гарантируется — планируйте окно вне активной работы.</p>
+    </section>
+
+    <section class="sub" id="ch8-3" data-title="8.3. Резервное копирование">
+      <h3><span class="no">8.3.</span> Резервное копирование</h3>
+      <p>Полный бэкап — одним файлом:</p>
+<pre><code>docker run --rm -v mini-tms-data:/data -v $PWD:/backup alpine \
+  cp /data/tms.db /backup/</code></pre>
+      <p>Заберите файл <code>tms.db</code>. Логические бэкапы организаций (JSON) делаются кнопкой из интерфейса — гл. <a href="#ch6">6</a>. Восстановление: остановите стек, верните <code>tms.db</code> в том, запустите стек.</p>
+    </section>
+
+    <section class="sub" id="ch8-4" data-title="8.4. HTTPS">
+      <h3><span class="no">8.4.</span> HTTPS</h3>
+      <p>HTTPS ставится реверс&#8209;прокси перед контейнером: Caddy в двух строках конфигурации или Nginx Proxy Manager из Portainer. Не забудьте проксировать WebSocket&#8209;канал <code>/ws</code> — без него живые обновления в интерфейсе не работают (остальное — работает).</p>
+    </section>
+
+    <section class="sub" id="ch8-5" data-title="8.5. Переменные окружения">
+      <h3><span class="no">8.5.</span> Переменные окружения</h3>
+      <div class="table-wrap">
+      <table>
+        <caption>Таблица 5. Переменные окружения сервера</caption>
+        <thead><tr><th>Переменная</th><th>Назначение</th></tr></thead>
+        <tbody>
+          <tr><td><code>TMS_SECRET_KEY</code></td><td>Ключ подписи JWT; в Docker обязательна (длинная случайная строка)</td></tr>
+          <tr><td><code>TMS_DATABASE_URL</code></td><td>Путь SQLite (в Docker: <code>sqlite:////data/tms.db</code>)</td></tr>
+          <tr><td><code>TMS_DATA_DIR</code></td><td>Каталог загруженных документов (том /data)</td></tr>
+          <tr><td><code>TMS_WEB_DIR</code></td><td>Каталог собранного SPA (в контейнере уже задан)</td></tr>
+          <tr><td><code>TMS_MT_PROVIDER</code></td><td><code>none | libretranslate | mock</code> — машинный перевод</td></tr>
+          <tr><td><code>TMS_MT_URL</code>, <code>TMS_MT_API_KEY</code></td><td>Адрес и ключ LibreTranslate</td></tr>
+          <tr><td><code>TMS_FUZZY_MIN_SCORE</code></td><td>Порог нечеткого совпадения TM</td></tr>
+          <tr><td><code>TMS_ANALYSIS_*</code></td><td>Веса категорий анализа для котировок</td></tr>
+          <tr><td><code>TMS_LQA_*</code></td><td>Штрафы minor/major/critical и порог приемки LQA (по умолчанию 95)</td></tr>
+          <tr><td><code>TMS_RATE_CURRENCY</code></td><td>Валюта новых прайс&#8209;листов по умолчанию</td></tr>
+          <tr><td><code>TMS_SEGMENT_LOCK_TTL</code></td><td>TTL сегментного лока (по умолчанию 10 минут)</td></tr>
+          <tr><td><code>TMS_QA_REGEX_MAX_PATTERN</code></td><td>Максимальная длина паттерна RX&#8209;правила</td></tr>
+          <tr><td><code>TMS_FEEDBACK_MAX_PER_HOUR</code></td><td>Лимит сообщений обратной связи в час (10)</td></tr>
+          <tr><td><code>TMS_FEEDBACK_MAX_MESSAGE</code></td><td>Максимальная длина текста фидбека (4000)</td></tr>
+          <tr><td><code>TMS_SMTP_HOST / PORT / USER / PASSWORD / FROM / STARTTLS</code></td><td>E&#8209;mail&#8209;канал уведомлений</td></tr>
+          <tr><td><code>TMS_TG_BOT_TOKEN</code></td><td>Telegram&#8209;бот для уведомлений</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <section class="sub" id="ch8-6" data-title="8.6. Безопасность">
+      <h3><span class="no">8.6.</span> Безопасность</h3>
+      <p>Пароли хранятся хешем PBKDF2 (200k итераций), сессии — JWT. Смена пароля отзывом аннулирует все ранее выданные токены (и REST, и WebSocket), выдавая взамен свежий: сессия пользователя продолжается без повторного входа. Подбор логина ограничен скользящим окном неудачных попыток на пару «логин, IP» — 429 с Retry&#8209;After. Изоляция организаций проверяется на сервере в каждом запросе. Технические логи не содержат текстов документов; аудит фиксирует назначения, смены статусов, прав и ресурсов.</p>
+    </section>
+  </section>
+
+  <section class="card" id="ch9" data-title="9. Частые вопросы и неполадки">
+    <h2><span class="no">9.</span> Частые вопросы и неполадки</h2>
+    <div class="qa">
+      <details>
+        <summary>Кнопка «Submit» не нажимается / сдача не проходит</summary>
+        <p>Проверьте QA&#8209;отчет: блокирующие замечания (нет перевода, неподтвержденные обязательные сегменты, теги, RX&#8209;правило с error) закрывают сдачу. Каждое замечание — переходом к сегменту.</p>
+      </details>
+      <details>
+        <summary>Сегмент стал серым и не редактируется, рядом 🔒</summary>
+        <p>Сегмент редактирует другой участник: мягкий лок с TTL 10 минут. Дождитесь освобождения (владелец ушел — лок истечет сам) или попросите менеджера снять лок принудительно.</p>
+      </details>
+      <details>
+        <summary>Появилось окно «Keep server / Overwrite with mine»</summary>
+        <p>Конфликт версий (409): сегмент изменили после вашей загрузки. «Keep server» берет серверную версию, «Overwrite» записывает вашу — выбирайте осознанно, история правок сохранит обе.</p>
+      </details>
+      <details>
+        <summary>«Get MT» не отвечает</summary>
+        <p>Внешний провайдер (LibreTranslate) недоступен или не настроен переменными <code>TMS_MT_URL</code> / <code>TMS_MT_API_KEY</code>. Редактор продолжает работать без MT; проверьте также, что MT разрешен политикой организации и флагом проекта.</p>
+      </details>
+      <details>
+        <summary>После смены пароля на другом устройстве выкинуло из системы</summary>
+        <p>Так задумано: смена пароля отзывает все ранее выданные токены. Войдите заново с новым паролем.</p>
+      </details>
+      <details>
+        <summary>Пред&#8209;перевод заполнил сегменты, но прогресс не растет</summary>
+        <p>Подстановки — черновики без подтверждения. Прогресс считается по подтвержденным обязательным сегментам: пройдитесь по сегментам и подтвердите их (<kbd>Ctrl</kbd>+<kbd>Enter</kbd>).</p>
+      </details>
+      <details>
+        <summary>Перевод из мобильного приложения не сохраняется на занятом сегменте</summary>
+        <p>Мобильный клиент не захватывает локи, а сервер отвечает 423 на чужое сохранение — сохранение выглядит как обычная ошибка. Подождите освобождения сегмента или работайте в веб&#8209;клиенте.</p>
+      </details>
+      <details>
+        <summary>Где сданный файл?</summary>
+        <p>Экспорт — в карточке задания (формат исходника), двуязычный DOCX для ревью — там же. Все сданные файлы проекта одним ZIP — карточка Delivery на дашборде проекта.</p>
+      </details>
+      <details>
+        <summary>Как восстановить данные из бэкапа?</summary>
+        <p>Файловый бэкап: остановить стек, вернуть <code>tms.db</code> в том <code>mini-tms-data</code>, запустить стек. JSON&#8209;бэкап организации — для выборочного разбора и переноса данных (паролей в нем нет).</p>
+      </details>
+      <details>
+        <summary>Демо&#8209;данные остались — это нормально для продакшена?</summary>
+        <p>Нет: сразу после установки смените пароли демо&#8209;пользователей (admin, pm, ann, ivan), а демо&#8209;организацию удалите, когда создадите свою.</p>
+      </details>
+    </div>
+  </section>
+
+  <section class="card" id="ch10" data-title="10. Глоссарий">
+    <h2><span class="no">10.</span> Глоссарий</h2>
+    <div class="table-wrap">
+    <table>
+      <caption>Таблица 6. Термины</caption>
+      <thead><tr><th>Термин</th><th>Определение</th></tr></thead>
+      <tbody>
+        <tr><td>CAT</td><td>Computer&#8209;Assisted Translation — перевод с инструментальной поддержкой: память, терминология, MT, QA</td></tr>
+        <tr><td>TMS</td><td>Translation Management System — управление проектами перевода: задания, статусы, биллинг, приемка</td></tr>
+        <tr><td>Сегмент</td><td>Единица перевода (предложение или фраза), с которой работает редактор</td></tr>
+        <tr><td>TM</td><td>Translation Memory — память переводов: пары «исходник → перевод», накопленные ранее</td></tr>
+        <tr><td>TB</td><td>Term Base — терминологическая база (глоссарий) со статусами терминов</td></tr>
+        <tr><td>MT</td><td>Machine Translation — машинный перевод (в Mini&#8209;TMS — только подсказка)</td></tr>
+        <tr><td>Exact / Fuzzy</td><td>Точное / нечеткое совпадение сегмента с TM (в процентах)</td></tr>
+        <tr><td>Автопропагация</td><td>Перенос подтвержденного перевода на идентичные сегменты задания</td></tr>
+        <tr><td>Конкорданс</td><td>Поиск по TM: «как это слово/фраза переводилось раньше»</td></tr>
+        <tr><td>QA</td><td>Quality Assurance — автоматический контроль качества перевода</td></tr>
+        <tr><td>LQA / MQM</td><td>Linguistic Quality Assessment — ручная оценка качества по категориям ошибок</td></tr>
+        <tr><td>RX&#8209;правило</td><td>Корпоративная проверка на регулярном выражении (must / must not match)</td></tr>
+        <tr><td>XLIFF</td><td>XML Localization Interchange File Format — двуязычный обменный формат (1.2/2.0)</td></tr>
+        <tr><td>TMX / TBX</td><td>Открытые форматы обмена памятью переводов / терминологией</td></tr>
+        <tr><td>Хендофф (handoff)</td><td>Передача задания во внешний CAT&#8209;инструмент через XLIFF и возврат</td></tr>
+        <tr><td>Выравнивание (alignment)</td><td>Сопоставление старых исходника и перевода для пополнения TM</td></tr>
+        <tr><td>Лока (lock)</td><td>Мягкая блокировка сегмента на время редактирования (TTL)</td></tr>
+        <tr><td>Леверидж</td><td>Повторное использование накопленных переводов — основа экономики CAT</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section class="card" id="appA" data-title="Приложение A. Форматы файлов">
+    <h2>Приложение A. Форматы файлов</h2>
+    <p>Минимальный набор, покрывающий типовые документы; профиль тегов и ограничения форматов описаны в файле <code>docs/formats.md</code> репозитория.</p>
+    <div class="table-wrap">
+    <table>
+      <caption>Таблица 7. Форматы импорта/экспорта</caption>
+      <thead><tr><th>Формат</th><th>Импорт</th><th>Экспорт</th></tr></thead>
+      <tbody>
+        <tr><td>TXT</td><td>Да</td><td>Да</td></tr>
+        <tr><td>XLIFF 1.2</td><td>Да (версия определяется автоматически; переводы из target — черновиками)</td><td>Да, в версии исходника, со state</td></tr>
+        <tr><td>XLIFF 2.0</td><td>Да (ignorable не переводится)</td><td>Да, с сохранением inline&#8209;разметки</td></tr>
+        <tr><td>DOCX</td><td>Да</td><td>Да (структура и теги сохранены)</td></tr>
+        <tr><td>Двуязычный DOCX</td><td>—</td><td>Да — документ для ревью (№ / исходник / перевод)</td></tr>
+        <tr><td>TMX 1.4b</td><td>Да — в TM</td><td>Да — из TM</td></tr>
+        <tr><td>CSV</td><td>Да — в TM (<code>source,target</code>) и TB (<code>term,translation,note,status</code>)</td><td>Да — из TM и TB</td></tr>
+        <tr><td>TBX&#8209;Basic</td><td>Да — в TB</td><td>Да — из TB</td></tr>
+        <tr><td>XLIFF&#8209;хендофф 1.2</td><td>Да — возврат из внешнего CAT</td><td>Да — задание наружу</td></tr>
+        <tr><td>ZIP&#8209;доставка, DOCX котировка/инвойс</td><td>—</td><td>Да — инструменты проекта (Delivery, Quote, Invoice)</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>Планируя цепочку, держите правило: исходный формат возвращается заказчику тем же форматом; обмен между CAT&#8209;инструментами — через XLIFF; накопление и перенос ресурсов — TMX/TBX/CSV.</p>
+  </section>
+</main>
+
+<footer class="docs">
+  Mini&#8209;TMS CAT · Руководство пользователя · v0.2.0 · исходник — <a href="https://github.com/Dolmetscher/mini-tms/blob/main/docs/user-guide-ru.md" target="_blank" rel="noreferrer">docs/user-guide-ru.md</a>
+</footer>
+
+<button id="up" title="Наверх" aria-label="Наверх">↑</button>
+
+<script>
+(function(){
+  "use strict";
+  var sections = Array.prototype.slice.call(document.querySelectorAll("section[data-title]"));
+  var navLinks = Array.prototype.slice.call(document.querySelectorAll("#nav a"));
+
+  /* --- scrollspy --- */
+  var current = null;
+  function setActive(id){
+    if (current === id) return;
+    current = id;
+    navLinks.forEach(function(a){ a.classList.toggle("active", a.getAttribute("href") === "#" + id); });
+    var act = document.querySelector("#nav a.active");
+    if (act) act.scrollIntoView({block:"nearest"});
+  }
+  if ("IntersectionObserver" in window){
+    var visible = {};
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (e.isIntersecting) visible[e.target.id] = e.intersectionRatio;
+        else delete visible[e.target.id];
+      });
+      var best = null, ratio = -1;
+      Object.keys(visible).forEach(function(id){ if (visible[id] > ratio){ ratio = visible[id]; best = id; } });
+      if (best) setActive(best);
+    }, {rootMargin:"-64px 0px -55% 0px", threshold:[0, .1, .3, .6]});
+    sections.forEach(function(s){ io.observe(s); });
+  }
+
+  /* --- поиск --- */
+  var input = document.getElementById("search");
+  var panel = document.getElementById("results");
+  var index = sections.map(function(s){
+    return { id: s.id, title: s.getAttribute("data-title"), text: s.innerText.replace(/\s+/g, " ").toLowerCase() };
+  });
+  function esc(s){ return s.replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+  function snippet(text, q){
+    var i = text.indexOf(q);
+    if (i < 0) i = 0;
+    var from = Math.max(0, i - 55), to = Math.min(text.length, i + q.length + 85);
+    var frag = (from > 0 ? "…" : "") + text.slice(from, to) + (to < text.length ? "…" : "");
+    return esc(frag).replace(new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "ig"), "<mark>$1</mark>");
+  }
+  input.addEventListener("input", function(){
+    var q = input.value.trim().toLowerCase();
+    if (q.length < 2){ panel.classList.remove("show"); panel.innerHTML = ""; return; }
+    var hits = [];
+    index.forEach(function(it){
+      var t = it.title.toLowerCase();
+      var inTitle = t.indexOf(q) >= 0;
+      var pos = it.text.indexOf(q);
+      if (inTitle || pos >= 0){
+        var count = 0, p = 0;
+        while ((p = it.text.indexOf(q, p)) >= 0){ count++; p += q.length; }
+        hits.push({ id: it.id, title: it.title, snip: snippet(it.text, q), score: (inTitle ? 100 : 0) + count });
+      }
+    });
+    hits.sort(function(a, b){ return b.score - a.score; });
+    panel.innerHTML = hits.length
+      ? hits.slice(0, 9).map(function(h){
+          return '<a class="r" data-id="' + h.id + '"><b>' + esc(h.title) + "</b><span>" + h.snip + "</span></a>";
+        }).join("")
+      : '<div class="empty">Ничего не найдено по «' + esc(input.value) + "»</div>";
+    panel.classList.add("show");
+  });
+  panel.addEventListener("click", function(ev){
+    var item = ev.target.closest(".r");
+    if (!item) return;
+    var target = document.getElementById(item.getAttribute("data-id"));
+    panel.classList.remove("show");
+    input.value = "";
+    if (target){
+      target.scrollIntoView({behavior:"smooth", block:"start"});
+      target.classList.remove("flash"); void target.offsetWidth; target.classList.add("flash");
+    }
+  });
+  document.addEventListener("click", function(ev){
+    if (!panel.contains(ev.target) && ev.target !== input) panel.classList.remove("show");
+  });
+
+  /* --- наверх + бургер --- */
+  var up = document.getElementById("up");
+  window.addEventListener("scroll", function(){ up.classList.toggle("show", window.scrollY > 500); }, {passive:true});
+  up.addEventListener("click", function(){ window.scrollTo({top:0, behavior:"smooth"}); });
+  var burger = document.getElementById("burger");
+  var sidebar = document.getElementById("sidebar");
+  burger.addEventListener("click", function(){ sidebar.classList.toggle("open"); });
+  document.addEventListener("click", function(ev){
+    if (sidebar.classList.contains("open") && !sidebar.contains(ev.target) && ev.target !== burger)
+      sidebar.classList.remove("open");
+  });
+  navLinks.forEach(function(a){ a.addEventListener("click", function(){ sidebar.classList.remove("open"); }); });
+})();
+</script>
+</body>
+</html>
